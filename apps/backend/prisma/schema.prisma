@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  COMPLAINANT
+  RESOLVER
+  ORG_ADMIN
+  SUPER_ADMIN
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  ESCALATED
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  users      User[]
+  units      Unit[]
+  categories Category[]
+  complaints Complaint[]
+
+  @@map("organizations")
+}
+
+model User {
+  id     String   @id @default(uuid())
+  orgId  String   @map("org_id")
+  name   String
+  email  String   @unique
+  password String
+  role   UserRole @default(COMPLAINANT)
+  unitId String?  @map("unit_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  unit         Unit?        @relation(fields: [unitId], references: [id])
+
+  complaintsSubmitted Complaint[]       @relation("Complainant")
+  complaintUpdates    ComplaintUpdate[]
+
+  @@index([orgId])
+  @@map("users")
+}
+
+model Unit {
+  id    String @id @default(uuid())
+  orgId String @map("org_id")
+  name  String
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  users        User[]
+  categories   Category[]
+  complaints   Complaint[]
+
+  @@index([orgId])
+  @@map("units")
+}
+
+model Category {
+  id             String @id @default(uuid())
+  orgId          String @map("org_id")
+  name           String
+  defaultUnitId  String? @map("default_unit_id")
+  slaHours       Int    @map("sla_hours")
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  defaultUnit  Unit?        @relation(fields: [defaultUnitId], references: [id])
+  complaints   Complaint[]
+
+  @@index([orgId])
+  @@map("categories")
+}
+
+model Complaint {
+  id              String            @id @default(uuid())
+  orgId           String            @map("org_id")
+  complainantId   String            @map("complainant_id")
+  categoryId      String            @map("category_id")
+  assignedUnitId  String?           @map("assigned_unit_id")
+  title           String
+  description     String
+  location        String
+  status          ComplaintStatus   @default(SUBMITTED)
+  priority        ComplaintPriority @default(MEDIUM)
+  slaDueAt        DateTime?         @map("sla_due_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  resolvedAt      DateTime?         @map("resolved_at")
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  complainant  User         @relation("Complainant", fields: [complainantId], references: [id])
+  category     Category     @relation(fields: [categoryId], references: [id])
+  assignedUnit Unit?        @relation(fields: [assignedUnitId], references: [id])
+
+  updates     ComplaintUpdate[]
+  attachments Attachment[]
+
+  @@index([orgId])
+  @@index([status])
+  @@map("complaints")
+}
+
+model ComplaintUpdate {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  authorId    String   @map("author_id")
+  note        String?
+  oldStatus   ComplaintStatus? @map("old_status")
+  newStatus   ComplaintStatus  @map("new_status")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([complaintId])
+  @@map("complaint_updates")
+}
+
+model Attachment {
+  id          String @id @default(uuid())
+  complaintId String @map("complaint_id")
+  url         String
+  uploadedBy  String @map("uploaded_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+
+  @@index([complaintId])
+  @@map("attachments")
+}
