@@ -11,11 +11,13 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
+import { ComplaintsModule } from './modules/complaints/complaints.module';
 
 @Module({
   imports: [
     PrismaModule,
     OrganizationsModule,
+    ComplaintsModule,
     UsersModule,
     AuthModule,
     UnitsModule,

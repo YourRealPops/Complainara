@@ -19,6 +19,23 @@ export class CategoriesRepository {
     });
   }
 
+  update(
+    id: string,
+    orgId: string,
+    data: Partial<{ name: string; slaHours: number; defaultUnitId: string }>,
+  ) {
+    return this.prisma.category.updateMany({
+      where: { id, orgId },
+      data,
+    });
+  }
+
+  delete(id: string, orgId: string) {
+    return this.prisma.category.deleteMany({
+      where: { id, orgId },
+    });
+  }
+
   findAllByOrg(orgId: string) {
     return this.prisma.category.findMany({ where: { orgId } });
   }
