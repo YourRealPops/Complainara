@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Inter, IBM_Plex_Mono } from "next/font/google";
+import { ParticleField } from "@/components/landing/ParticleField";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -31,9 +32,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${archivo.variable} ${inter.variable} ${plexMono.variable} font-body bg-paper text-ink antialiased`}
+        className={`${archivo.variable} ${inter.variable} ${plexMono.variable} font-body bg-bg text-foreground antialiased`}
       >
-        {children}
+        <ParticleField />
+        <div className="relative z-10">{children}</div>
       </body>
     </html>
   );

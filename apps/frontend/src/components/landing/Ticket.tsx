@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { GlassCard } from "@/components/ui/GlassCard";
 
 export function Ticket() {
   const [stamped, setStamped] = useState(false);
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
-    const stampTimer = setTimeout(() => setStamped(true), 650);
+    const stampTimer = setTimeout(() => setStamped(true), 900);
     const tickTimer = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => {
       clearTimeout(stampTimer);
@@ -20,33 +22,39 @@ export function Ticket() {
   const ss = String(59 - (seconds % 60)).padStart(2, "0");
 
   return (
-    <div className="relative w-full max-w-sm">
-      <div className="relative rotate-1 rounded-sm border border-line bg-white p-6 shadow-[0_1px_0_#D8DDD5,0_20px_40px_-20px_rgba(28,43,42,0.35)]">
-        <div className="flex items-start justify-between border-b border-dashed border-line pb-4">
+    <motion.div
+      initial={{ opacity: 0, y: 30, rotate: -2 }}
+      animate={{ opacity: 1, y: 0, rotate: -1 }}
+      whileHover={{ rotate: 0, y: -6 }}
+      transition={{ duration: 0.7, ease: "easeOut" }}
+      className="relative w-full max-w-sm"
+    >
+      <GlassCard className="p-6">
+        <div className="flex items-start justify-between border-b border-line pb-4">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-slate">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
               Ticket
             </p>
-            <p className="font-mono text-sm text-ink">#CX-0417</p>
+            <p className="font-mono text-sm text-foreground">#CX-0417</p>
           </div>
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-slate text-right">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted text-right">
               Filed
             </p>
-            <p className="font-mono text-sm text-ink">Today, 09:14</p>
+            <p className="font-mono text-sm text-foreground">Today, 09:14</p>
           </div>
         </div>
 
         <div className="py-5">
-          <p className="font-display text-lg font-bold leading-snug text-ink">
+          <p className="font-display text-lg font-bold leading-snug text-foreground">
             No hot water — Hostel B, 2nd floor
           </p>
-          <p className="mt-1 text-sm text-slate">Category: Plumbing</p>
+          <p className="mt-1 text-sm text-muted">Category: Plumbing</p>
         </div>
 
-        <div className="flex items-center justify-between border-t border-dashed border-line pt-4">
+        <div className="flex items-center justify-between border-t border-line pt-4">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-slate">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
               Time to fix
             </p>
             <p className="font-mono text-base text-teal">
@@ -54,23 +62,29 @@ export function Ticket() {
             </p>
           </div>
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-slate text-right">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted text-right">
               Routed to
             </p>
-            <p className="text-sm text-ink text-right">Maintenance</p>
+            <p className="text-sm text-foreground text-right">Maintenance</p>
           </div>
         </div>
-      </div>
+      </GlassCard>
 
-      <div
-        className={`pointer-events-none absolute -right-6 top-8 flex h-24 w-24 -rotate-[18deg] items-center justify-center rounded-full border-[3px] border-double border-stamp transition-all duration-500 ${
-          stamped ? "scale-100 opacity-90" : "scale-150 opacity-0"
-        }`}
+      <motion.div
+        initial={{ scale: 1.6, opacity: 0, rotate: -18 }}
+        animate={
+          stamped
+            ? { scale: 1, opacity: 0.95, rotate: -18 }
+            : { scale: 1.6, opacity: 0 }
+        }
+        transition={{ type: "spring", stiffness: 260, damping: 18 }}
+        className="pointer-events-none absolute -right-6 top-8 flex h-24 w-24 items-center justify-center rounded-full border-[3px] border-double border-stamp"
+        style={{ boxShadow: "0 0 24px rgba(255,107,74,0.35)" }}
       >
         <span className="font-display text-[11px] font-extrabold uppercase tracking-wider text-stamp">
           Acknowledged
         </span>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

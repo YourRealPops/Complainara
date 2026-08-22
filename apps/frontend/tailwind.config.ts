@@ -8,12 +8,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        paper: "#EFF2EF",
-        ink: "#1C2B2A",
-        teal: "#1F6F63",
-        stamp: "#A63D2F",
-        slate: "#5C6B66",
-        line: "#D8DDD5",
+        bg: "#0A1210",
+        surface: "#0F1A17",
+        foreground: "#ECF1EE",
+        muted: "#93A29C",
+        teal: "#2FE6C0",
+        stamp: "#FF6B4A",
+        line: "rgba(255,255,255,0.08)",
       },
       fontFamily: {
         display: ["var(--font-archivo)"],
