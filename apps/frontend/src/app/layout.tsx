@@ -22,7 +22,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Complainara — Complaints, timestamped.",
+  title: "Complainara.",
   description:
     "Complainara routes complaints to the right team instantly, with a visible deadline for resolution.",
 };
