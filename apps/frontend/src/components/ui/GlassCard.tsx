@@ -9,7 +9,7 @@ export function GlassCard({
 }) {
   return (
     <div
-      className={`rounded-xl border border-line bg-white/[0.04] backdrop-blur-xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)] ${className}`}
+      className={`rounded-xl border border-line bg-glass backdrop-blur-xl shadow-[0_8px_40px_-12px_var(--color-glass-shadow)] ${className}`}
     >
       {children}
     </div>

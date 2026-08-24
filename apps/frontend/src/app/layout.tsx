@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Archivo, Inter, IBM_Plex_Mono } from "next/font/google";
 import { ParticleField } from "@/components/landing/ParticleField";
+import { ThemeProvider } from "@/components/ui/ThemeProvider";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -30,12 +31,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${archivo.variable} ${inter.variable} ${plexMono.variable} font-body bg-bg text-foreground antialiased`}
       >
-        <ParticleField />
-        <div className="relative z-10">{children}</div>
+        <ThemeProvider>
+          <ParticleField />
+          <div className="relative z-10">{children}</div>
+        </ThemeProvider>
       </body>
     </html>
   );

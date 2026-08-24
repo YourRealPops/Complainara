@@ -38,7 +38,7 @@ export function Hero() {
         >
           Complainara routes complaints to the right team the moment
           they&apos;re filed, and gives everyone a visible timeline for
-          resolution — for schools, hostels, and workplaces.
+          resolution. It is built for Organizations, Workplaces, Higher Institutions, e.t.c.
         </motion.p>
         <motion.div variants={item} className="mt-8 flex items-center gap-4">
           <Link

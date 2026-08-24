@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
-@theme inline {
-  /* colors */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Dark mode (default) ── */
+:root {
   --color-bg: #0A1210;
   --color-surface: #0F1A17;
   --color-foreground: #ECF1EE;
@@ -9,6 +13,38 @@
   --color-teal: #2FE6C0;
   --color-stamp: #FF6B4A;
   --color-line: rgba(255, 255, 255, 0.08);
+  --color-glass: rgba(255, 255, 255, 0.04);
+  --color-glass-shadow: rgba(0, 0, 0, 0.5);
+  --color-particle: rgba(47, 230, 192, 0.5);
+  --color-particle-line: rgba(47, 230, 192, 0.12);
+}
+
+/* ── Light mode ── */
+:root.light {
+  --color-bg: #F4F7F6;
+  --color-surface: #FFFFFF;
+  --color-foreground: #1A2B27;
+  --color-muted: #5C6E67;
+  --color-teal: #1A9A7D;
+  --color-stamp: #D94A30;
+  --color-line: rgba(0, 0, 0, 0.1);
+  --color-glass: rgba(0, 0, 0, 0.03);
+  --color-glass-shadow: rgba(0, 0, 0, 0.08);
+  --color-particle: rgba(26, 154, 125, 0.85);
+  --color-particle-line: rgba(26, 154, 125, 0.3);
+}
+
+@theme inline {
+  /* colors */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-foreground: var(--color-foreground);
+  --color-muted: var(--color-muted);
+  --color-teal: var(--color-teal);
+  --color-stamp: var(--color-stamp);
+  --color-line: var(--color-line);
+  --color-glass: var(--color-glass);
+  --color-glass-shadow: var(--color-glass-shadow);
 
   /* fonts */
   --font-display: var(--font-archivo);

@@ -1,9 +1,24 @@
 export const LIFECYCLE = [
-  { label: "Submitted", detail: "Filed by the complainant" },
-  { label: "Acknowledged", detail: "Routed to the right unit" },
-  { label: "In progress", detail: "Being worked on" },
-  { label: "Resolved", detail: "Fix reported" },
-  { label: "Closed", detail: "Confirmed by complainant" },
+  {
+    label: "Submitted",
+    detail: "The complainant fills out a form (category, description, and location), and hits submit.",
+  },
+  {
+    label: "Acknowledged",
+    detail: "The system instantly routes it to the right team and logs who received it and when.",
+  },
+  {
+    label: "In progress",
+    detail: "The assigned unit begins working. Every action(notes, reassignments, updates), is tracked.",
+  },
+  {
+    label: "Resolved",
+    detail: "The team marks it fixed with a summary of what was done. The clock stops.",
+  },
+  {
+    label: "Closed",
+    detail: "The complainant confirms the fix. If they don't respond in time, it auto-closes.",
+  },
 ] as const;
 
 export const AUDIENCES = [

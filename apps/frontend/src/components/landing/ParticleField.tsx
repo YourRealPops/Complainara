@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useTheme } from "@/components/ui/ThemeProvider";
 
 type Node = { x: number; y: number; vx: number; vy: number };
 
 export function ParticleField() {
+  const { theme } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -50,13 +52,20 @@ export function ParticleField() {
         }
       }
 
+      // Read theme colors from CSS variables
+      const cs = getComputedStyle(document.documentElement);
+      const particleColor = cs.getPropertyValue("--color-particle").trim() || "rgba(47, 230, 192, 0.5)";
+      const lineColor = cs.getPropertyValue("--color-particle-line").trim() || "rgba(47, 230, 192, 0.12)";
+
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const dx = nodes[i].x - nodes[j].x;
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < LINK_DISTANCE) {
-            ctx!.strokeStyle = `rgba(47, 230, 192, ${0.12 * (1 - dist / LINK_DISTANCE)})`;
+            // Blend the line color's alpha with distance
+            const alpha = 1 - dist / LINK_DISTANCE;
+            ctx!.strokeStyle = lineColor.replace(/\d[\d.]*\)$/, `${alpha * 0.12})`);
             ctx!.lineWidth = 1;
             ctx!.beginPath();
             ctx!.moveTo(nodes[i].x, nodes[i].y);
@@ -67,7 +76,7 @@ export function ParticleField() {
       }
 
       for (const n of nodes) {
-        ctx!.fillStyle = "rgba(47, 230, 192, 0.5)";
+        ctx!.fillStyle = particleColor;
         ctx!.beginPath();
         ctx!.arc(n.x, n.y, 1.6, 0, Math.PI * 2);
         ctx!.fill();
@@ -89,7 +98,7 @@ export function ParticleField() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-0 opacity-70"
+      className={`pointer-events-none fixed inset-0 z-0 ${theme === "light" ? "opacity-80" : "opacity-60"}`}
       aria-hidden="true"
     />
   );
