@@ -52,9 +52,9 @@ export class UsersService {
   }
 
   // Strips the password hash before returning user data to any client
-  private sanitize(user: { password: string; [key: string]: unknown }) {
+  private sanitize<T extends { password: string }>(user: T): Omit<T, 'password'> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...rest } = user;
-    return rest;
+    return rest as Omit<T, 'password'>;
   }
 }

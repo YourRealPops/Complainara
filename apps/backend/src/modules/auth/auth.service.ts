@@ -1,14 +1,18 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { UserRole } from '@prisma/client';
 import { UsersService } from '../users/users.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { LoginDto } from './dto/login.dto';
+import { SignupDto } from './dto/signup.dto';
 import { JwtPayload } from './types/jwt-payload.type';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
+    private readonly organizationsService: OrganizationsService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -23,21 +27,30 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload: JwtPayload = {
-      sub: user.id,
-      orgId: user.orgId,
-      role: user.role,
-    };
+    return this.issueToken(user.id, user.orgId, user.role);
+  }
 
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        orgId: user.orgId,
-      },
-    };
+  async signup(dto: SignupDto) {
+    // A brand new org has no users yet, so this is the one place
+    // we're allowed to create an ORG_ADMIN without an existing token.
+    const organization = await this.organizationsService.create({
+      name: dto.organizationName,
+      type: dto.organizationType,
+    });
+
+    const user = await this.usersService.create({
+      name: dto.adminName,
+      email: dto.adminEmail,
+      password: dto.adminPassword,
+      orgId: organization.id,
+      role: UserRole.ORG_ADMIN,
+    });
+
+    return this.issueToken(user.id, organization.id, UserRole.ORG_ADMIN);
+  }
+
+  private issueToken(userId: string, orgId: string, role: UserRole) {
+    const payload: JwtPayload = { sub: userId, orgId, role };
+    return { accessToken: this.jwtService.sign(payload) };
   }
 }
