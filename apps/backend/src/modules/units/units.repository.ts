@@ -11,6 +11,19 @@ export class UnitsRepository {
     });
   }
 
+  update(id: string, orgId: string, data: Partial<{ name: string }>) {
+    return this.prisma.unit.updateMany({
+      where: { id, orgId },
+      data,
+    });
+  }
+
+  delete(id: string, orgId: string) {
+    return this.prisma.unit.deleteMany({
+      where: { id, orgId },
+    });
+  }
+
   findAllByOrg(orgId: string) {
     return this.prisma.unit.findMany({ where: { orgId } });
   }

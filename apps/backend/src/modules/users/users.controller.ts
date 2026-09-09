@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentOrg } from '../../common/decorators/current-org.decorator';
 import { UserRole } from '@prisma/client';
@@ -13,6 +14,12 @@ export class UsersController {
   @Post()
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
+  }
+
+  @Roles(UserRole.ORG_ADMIN)
+  @Patch(':id/role')
+  updateRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
+    return this.usersService.updateRole(id, dto.role);
   }
 
   @Get(':id')

@@ -60,7 +60,7 @@ export class ComplaintsRepository {
     note?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const complaint = await tx.complaint.update({
+      await tx.complaint.update({
         where: { id },
         data: {
           status: newStatus,
@@ -78,7 +78,52 @@ export class ComplaintsRepository {
         },
       });
 
-      return complaint;
+      return tx.complaint.findFirst({
+        where: { id, orgId },
+        include: { category: true, assignedUnit: true, updates: true },
+      });
+    });
+  }
+
+  /**
+   * Find all complaints that are past their SLA deadline and not yet
+   * in a terminal or already-escalated state.
+   * Used by the escalation cron job — no orgId filter since the job
+   * runs across all tenants.
+   */
+  findOverdueComplaints() {
+    return this.prisma.complaint.findMany({
+      where: {
+        slaDueAt: { lt: new Date() },
+        status: {
+          notIn: ['RESOLVED', 'CLOSED', 'ESCALATED'],
+        },
+      },
+    });
+  }
+
+  /**
+   * Escalate a complaint and log the update. No authorId — the system
+   * user (null) is used as the author for automated transitions.
+   */
+  async escalateComplaint(id: string, oldStatus: ComplaintStatus) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.complaint.update({
+        where: { id },
+        data: { status: 'ESCALATED' },
+      });
+
+      await tx.complaintUpdate.create({
+        data: {
+          complaintId: id,
+          authorId: '00000000-0000-0000-0000-000000000000', // system user
+          oldStatus,
+          newStatus: 'ESCALATED',
+          note: 'Automatically escalated — SLA deadline passed.',
+        },
+      });
+
+      return tx.complaint.findFirst({ where: { id } });
     });
   }
 }

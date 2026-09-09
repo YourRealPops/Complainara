@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getComplaints, type Complaint } from "@/lib/complaints";
 import { ApiError } from "@/lib/api";
 import { ComplaintCard } from "@/components/dashboard/ComplaintCard";
@@ -19,9 +20,17 @@ export default function ComplaintsPage() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-foreground">
-        Complaints
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-2xl font-bold text-foreground">
+          Complaints
+        </h1>
+        <Link
+          href="/dashboard/complaints/new"
+          className="rounded-lg bg-teal px-4 py-2 font-mono text-xs font-medium text-bg transition-colors hover:bg-teal/80"
+        >
+          + New Complaint
+        </Link>
+      </div>
 
       {loading && <p className="mt-6 text-sm text-muted">Loading…</p>}
 

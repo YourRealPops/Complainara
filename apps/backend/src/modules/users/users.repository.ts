@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 
 @Injectable()
 export class UsersRepository {
@@ -16,6 +16,13 @@ export class UsersRepository {
 
   findById(id: string) {
     return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  updateRole(id: string, role: UserRole) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { role },
+    });
   }
 
   findAllByOrg(orgId: string) {

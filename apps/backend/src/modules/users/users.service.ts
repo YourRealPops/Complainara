@@ -6,6 +6,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserRole } from '@prisma/client';
 
 const SALT_ROUNDS = 10;
 
@@ -44,6 +45,12 @@ export class UsersService {
       throw new NotFoundException(`User with id ${id} not found`);
     }
     return this.sanitize(user);
+  }
+
+  async updateRole(id: string, role: UserRole) {
+    await this.findById(id);
+    await this.usersRepository.updateRole(id, role);
+    return this.findById(id);
   }
 
   async findAllByOrg(orgId: string) {
