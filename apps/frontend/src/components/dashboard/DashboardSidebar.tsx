@@ -3,19 +3,33 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { logout } from "@/lib/auth-client";
+import { getSession, logout } from "@/lib/auth-client";
+import type { SessionUser } from "@/lib/auth-client";
 
-const NAV_ITEMS = [
+type NavItem = { href: string; label: string; roles?: string[] };
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Complaints" },
-  { href: "/dashboard/units", label: "Units" },
-  { href: "/dashboard/categories", label: "Categories" },
-  { href: "/dashboard/users", label: "Users" },
+  { href: "/dashboard/complaints/new", label: "File a complaint", roles: ["COMPLAINANT"] },
+  { href: "/dashboard/units", label: "Units", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
+  { href: "/dashboard/categories", label: "Categories", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
+  { href: "/dashboard/users", label: "Users", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
+  { href: "/dashboard/settings", label: "Settings", roles: ["ORG_ADMIN"] },
 ];
+
+function filterNavByRole(items: NavItem[], role: string): NavItem[] {
+  return items.filter((item) => !item.roles || item.roles.includes(role));
+}
 
 export function DashboardSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [session, setSession] = useState<SessionUser | null>(null);
+
+  useEffect(() => {
+    setSession(getSession());
+  }, []);
 
   // Close mobile sidebar on navigation
   useEffect(() => {
@@ -26,6 +40,9 @@ export function DashboardSidebar() {
     logout();
     router.push("/login");
   }
+
+  const role = session?.role ?? "COMPLAINANT";
+  const visibleItems = filterNavByRole(NAV_ITEMS, role);
 
   return (
     <>
@@ -69,8 +86,15 @@ export function DashboardSidebar() {
           Complainara
         </Link>
 
-        <nav className="mt-8 flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
+        {/* Role badge */}
+        <div className="mt-3">
+          <span className="inline-block rounded-full bg-teal/10 px-2.5 py-0.5 font-mono text-xs text-teal">
+            {role.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
+          </span>
+        </div>
+
+        <nav className="mt-6 flex flex-col gap-1">
+          {visibleItems.map((item) => {
             const active =
               item.href === "/dashboard"
                 ? pathname === "/dashboard" || pathname.startsWith("/dashboard/complaints")

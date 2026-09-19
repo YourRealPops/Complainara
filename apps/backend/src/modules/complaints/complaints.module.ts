@@ -4,9 +4,10 @@ import { ComplaintsService } from './complaints.service';
 import { ComplaintsRepository } from './complaints.repository';
 import { CategoriesModule } from '../categories/categories.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [CategoriesModule, NotificationsModule],
+  imports: [CategoriesModule, NotificationsModule, UsersModule],
   controllers: [ComplaintsController],
   providers: [ComplaintsService, ComplaintsRepository],
   exports: [ComplaintsService],

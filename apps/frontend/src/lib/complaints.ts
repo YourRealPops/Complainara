@@ -22,6 +22,7 @@ export type ComplaintUpdate = {
 
 export type Complaint = {
   id: string;
+  complainantId: string;
   title: string;
   description: string;
   location: string;

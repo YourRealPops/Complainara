@@ -106,11 +106,35 @@ export default function ComplaintDetailPage() {
         <StatusBadge status={complaint.status} />
       </div>
 
+      {/* SLA banner */}
+      <div
+        className={`mt-4 rounded-xl border p-4 ${
+          sla.overdue
+            ? "border-stamp/30 bg-stamp/10"
+            : "border-teal/30 bg-teal/10"
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs uppercase tracking-wide text-muted">
+            SLA
+          </span>
+          <span
+            className={`font-display text-lg font-bold ${
+              sla.overdue ? "text-stamp" : "text-teal"
+            }`}
+          >
+            {sla.label}
+          </span>
+        </div>
+        {complaint.slaDueAt && (
+          <p className="mt-1 font-mono text-xs text-muted">
+            Deadline: {new Date(complaint.slaDueAt).toLocaleString()}
+          </p>
+        )}
+      </div>
+
       {/* Meta row */}
-      <div className="mt-4 flex flex-wrap items-center gap-4 font-mono text-xs">
-        <span className={sla.overdue ? "text-stamp" : "text-muted"}>
-          {sla.label}
-        </span>
+      <div className="mt-3 flex flex-wrap items-center gap-4 font-mono text-xs">
         <span className="text-muted">
           Priority: {complaint.priority}
         </span>
@@ -153,6 +177,34 @@ export default function ComplaintDetailPage() {
           )}
         </div>
       )}
+
+      {/* Complainant: confirm resolution */}
+      {session?.role === "COMPLAINANT" &&
+        complaint.complainantId === session.sub &&
+        complaint.status === "RESOLVED" && (
+          <div className="mt-6">
+            <div className="rounded-xl border border-teal/30 bg-teal/10 p-5">
+              <h2 className="font-display text-sm font-bold uppercase tracking-wide text-teal">
+                Confirm Resolution
+              </h2>
+              <p className="mt-2 text-sm text-muted">
+                If the issue has been resolved, confirm it to close the complaint.
+              </p>
+              <button
+                onClick={() => handleStatusChange("CLOSED", "Resolution confirmed by complainant.")}
+                disabled={transitioning}
+                className="mt-3 rounded-lg bg-teal px-4 py-2 font-mono text-xs font-medium text-bg transition-colors hover:bg-teal/80 disabled:opacity-50"
+              >
+                {transitioning ? "Updating…" : "Confirm & Close"}
+              </button>
+            </div>
+            {statusError && (
+              <div className="mt-3 rounded-lg border border-stamp/30 bg-stamp/10 px-4 py-3 text-sm text-stamp">
+                {statusError}
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Audit trail */}
       <div className="mt-8">

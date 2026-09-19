@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createComplaint, type ComplaintPriority } from "@/lib/complaints";
+import Link from "next/link";
+import {
+  createComplaint,
+  type Complaint,
+  type ComplaintPriority,
+} from "@/lib/complaints";
 import { getCategories, type Category } from "@/lib/categories";
 import { ApiError } from "@/lib/api";
 
@@ -27,6 +32,7 @@ export default function NewComplaintPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState<Complaint | null>(null);
 
   useEffect(() => {
     getCategories()
@@ -48,7 +54,7 @@ export default function NewComplaintPage() {
         categoryId,
         priority,
       });
-      router.push(`/dashboard/complaints/${complaint.id}`);
+      setSubmitted(complaint);
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Failed to submit complaint.",
@@ -56,6 +62,86 @@ export default function NewComplaintPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Success confirmation screen
+  if (submitted) {
+    const slaDate = submitted.slaDueAt
+      ? new Date(submitted.slaDueAt).toLocaleString()
+      : null;
+
+    return (
+      <div className="mx-auto max-w-xl">
+        <div className="rounded-xl border border-teal/30 bg-teal/10 p-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-teal/20">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-teal"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            Complaint submitted
+          </h1>
+          <p className="mt-2 font-mono text-sm text-muted">
+            Reference: {submitted.id.slice(0, 8).toUpperCase()}
+          </p>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-line bg-surface p-5">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wide text-muted">
+            What happens next
+          </h2>
+          <div className="mt-3 space-y-3">
+            {submitted.assignedUnit && (
+              <div className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal/10 font-mono text-xs text-teal">
+                  1
+                </span>
+                <span className="text-sm text-foreground">
+                  Routed to <strong>{submitted.assignedUnit.name}</strong>
+                </span>
+              </div>
+            )}
+            {slaDate && (
+              <div className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal/10 font-mono text-xs text-teal">
+                  {submitted.assignedUnit ? "2" : "1"}
+                </span>
+                <span className="text-sm text-foreground">
+                  Expected resolution by <strong>{slaDate}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <Link
+            href={`/dashboard/complaints/${submitted.id}`}
+            className="flex-1 rounded-lg bg-teal px-4 py-3 text-center font-mono text-sm font-medium text-bg transition-colors hover:bg-teal/80"
+          >
+            View complaint
+          </Link>
+          <Link
+            href="/dashboard"
+            className="flex-1 rounded-lg border border-line px-4 py-3 text-center font-mono text-sm text-muted transition-colors hover:text-foreground"
+          >
+            Back to dashboard
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

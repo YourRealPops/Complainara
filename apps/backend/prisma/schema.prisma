@@ -33,6 +33,8 @@ model Organization {
   id        String   @id @default(uuid())
   name      String
   type      String
+  joinCode  String   @unique @map("join_code")
+  allowedEmailDomain String? @map("allowed_email_domain")
   createdAt DateTime @default(now()) @map("created_at")
 
   users      User[]

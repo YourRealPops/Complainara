@@ -44,6 +44,38 @@ export class ComplaintsRepository {
     });
   }
 
+  /** Only complaints filed by this user */
+  findAllByComplainant(orgId: string, complainantId: string) {
+    return this.prisma.complaint.findMany({
+      where: { orgId, complainantId },
+      orderBy: { createdAt: 'desc' },
+      include: { category: true, assignedUnit: true },
+    });
+  }
+
+  /** Complaints assigned to the user's unit, plus the user's own complaints */
+  async findAllByUnitOrOwner(orgId: string, userId: string) {
+    // Fetch user to get their unitId
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { unitId: true },
+    });
+
+    const where: any = {
+      orgId,
+      OR: [
+        { complainantId: userId },
+        ...(user?.unitId ? [{ assignedUnitId: user.unitId }] : []),
+      ],
+    };
+
+    return this.prisma.complaint.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { category: true, assignedUnit: true },
+    });
+  }
+
   findById(id: string, orgId: string) {
     return this.prisma.complaint.findFirst({
       where: { id, orgId },

@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
@@ -6,6 +11,7 @@ import { UsersService } from '../users/users.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
+import { JoinDto } from './dto/join.dto';
 import { JwtPayload } from './types/jwt-payload.type';
 
 @Injectable()
@@ -47,6 +53,36 @@ export class AuthService {
     });
 
     return this.issueToken(user.id, organization.id, UserRole.ORG_ADMIN);
+  }
+
+  async join(dto: JoinDto) {
+    const organization = await this.organizationsService.findByJoinCode(
+      dto.joinCode,
+    );
+    if (!organization) {
+      throw new NotFoundException('Invalid join code');
+    }
+
+    // Check email domain restriction
+    if (organization.allowedEmailDomain) {
+      const emailDomain = dto.email.split('@')[1]?.toLowerCase();
+      if (emailDomain !== organization.allowedEmailDomain.toLowerCase()) {
+        throw new BadRequestException(
+          `Only emails from @${organization.allowedEmailDomain} can join this organization`,
+        );
+      }
+    }
+
+    // Reuse UsersService.create — handles bcrypt hashing and duplicate-email conflict
+    const user = await this.usersService.create({
+      name: dto.name,
+      email: dto.email,
+      password: dto.password,
+      orgId: organization.id,
+      role: UserRole.COMPLAINANT,
+    });
+
+    return this.issueToken(user.id, organization.id, UserRole.COMPLAINANT);
   }
 
   private issueToken(userId: string, orgId: string, role: UserRole) {

@@ -2,17 +2,28 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { joinOrganization } from "@/lib/join";
+import { ApiError } from "@/lib/api";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" as const } },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: "easeOut" as const },
+  },
 };
 
-export default function LoginPage() {
+export default function JoinPage() {
   const router = useRouter();
+  const params = useParams();
+  const codeFromUrl = (params.code as string) ?? "";
+
+  const [joinCode, setJoinCode] = useState(codeFromUrl);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,23 +35,15 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.message ?? "Invalid credentials");
-        return;
-      }
-
+      const data = await joinOrganization({ joinCode, name, email, password });
       localStorage.setItem("accessToken", data.accessToken);
       router.push("/dashboard");
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -58,26 +61,23 @@ export default function LoginPage() {
       <motion.div
         initial="hidden"
         animate="show"
-        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: 0.1 } },
+        }}
         className="w-full max-w-md"
       >
         <motion.div variants={fadeUp} className="mb-8 text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-stamp">
-            Welcome back
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-teal">
+            Join your organization
           </p>
           <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-foreground">
-            Log in to Complainara
+            Enter with a join code
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-teal hover:underline">
-              Sign up
-            </Link>
-          </p>
-          <p className="mt-1 text-sm text-muted">
-            Have a join code?{" "}
-            <Link href="/join" className="text-teal hover:underline">
-              Join your organization
+            Already have an account?{" "}
+            <Link href="/login" className="text-teal hover:underline">
+              Log in
             </Link>
           </p>
         </motion.div>
@@ -90,6 +90,42 @@ export default function LoginPage() {
                   {error}
                 </div>
               )}
+
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="joinCode"
+                  className="font-mono text-xs uppercase tracking-wider text-muted"
+                >
+                  Join code
+                </label>
+                <input
+                  id="joinCode"
+                  type="text"
+                  required
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  placeholder="Paste your join code"
+                  className="rounded-lg border border-line bg-surface px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted/50 outline-none transition-colors focus:border-teal"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="name"
+                  className="font-mono text-xs uppercase tracking-wider text-muted"
+                >
+                  Full name
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Jane Doe"
+                  className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-foreground placeholder:text-muted/50 outline-none transition-colors focus:border-teal"
+                />
+              </div>
 
               <div className="flex flex-col gap-1.5">
                 <label
@@ -133,7 +169,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="mt-2 rounded-full bg-teal px-6 py-3 text-sm font-medium text-bg transition-shadow hover:shadow-[0_0_24px_rgba(47,230,192,0.5)] disabled:opacity-50"
               >
-                {loading ? "Logging in…" : "Log in"}
+                {loading ? "Joining…" : "Join organization"}
               </button>
             </form>
           </GlassCard>

@@ -10,8 +10,10 @@ import { ComplaintsRepository } from './complaints.repository';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CategoriesService } from '../categories/categories.service';
+import { UsersService } from '../users/users.service';
 import { isValidTransition } from './complaint-status.rules';
 import type { NotificationService } from '../notifications/notifications.interface';
+import type { UserRole } from '@prisma/client';
 
 @Injectable()
 export class ComplaintsService {
@@ -20,6 +22,7 @@ export class ComplaintsService {
   constructor(
     private readonly complaintsRepository: ComplaintsRepository,
     private readonly categoriesService: CategoriesService,
+    private readonly usersService: UsersService,
     @Inject('NotificationService')
     private readonly notificationService: NotificationService,
   ) {}
@@ -46,15 +49,62 @@ export class ComplaintsService {
     });
   }
 
-  findAllByOrg(orgId: string) {
+  /**
+   * Role-scoped list of complaints:
+   * - COMPLAINANT: only their own complaints
+   * - RESOLVER: complaints assigned to their unit + their own
+   * - ORG_ADMIN / SUPER_ADMIN: all complaints in the org
+   */
+  findAllByOrg(orgId: string, role: UserRole, userId: string) {
+    if (role === 'COMPLAINANT') {
+      return this.complaintsRepository.findAllByComplainant(orgId, userId);
+    }
+    if (role === 'RESOLVER') {
+      return this.complaintsRepository.findAllByUnitOrOwner(orgId, userId);
+    }
+    // ORG_ADMIN, SUPER_ADMIN see everything
     return this.complaintsRepository.findAllByOrg(orgId);
   }
 
+  /**
+   * Internal use: fetch by id + orgId without role scoping.
+   * Used by the controller's status-update path which does its own authorization.
+   */
   async findById(id: string, orgId: string) {
     const complaint = await this.complaintsRepository.findById(id, orgId);
     if (!complaint) {
       throw new NotFoundException(`Complaint with id ${id} not found`);
     }
+    return complaint;
+  }
+
+  /**
+   * Public-facing fetch with role scoping.
+   * - COMPLAINANT: only their own complaint, else 404
+   * - RESOLVER: complaint in their unit or their own, else 404
+   * - ORG_ADMIN / SUPER_ADMIN: any complaint in the org
+   */
+  async findByIdScoped(id: string, orgId: string, role: UserRole, userId: string) {
+    const complaint = await this.complaintsRepository.findById(id, orgId);
+    if (!complaint) {
+      throw new NotFoundException(`Complaint with id ${id} not found`);
+    }
+
+    if (role === 'COMPLAINANT') {
+      if (complaint.complainantId !== userId) {
+        throw new NotFoundException(`Complaint with id ${id} not found`);
+      }
+    } else if (role === 'RESOLVER') {
+      // Fetch user to check unitId
+      const user = await this.usersService.findById(userId);
+      const isOwn = complaint.complainantId === userId;
+      const isInUnit = user?.unitId && complaint.assignedUnitId === user.unitId;
+      if (!isOwn && !isInUnit) {
+        throw new NotFoundException(`Complaint with id ${id} not found`);
+      }
+    }
+    // ORG_ADMIN / SUPER_ADMIN: no additional check
+
     return complaint;
   }
 
