@@ -88,7 +88,7 @@ export default function ComplaintDetailPage() {
 
   if (!complaint) return null;
 
-  const sla = formatSlaCountdown(complaint.slaDueAt);
+  const sla = formatSlaCountdown(complaint.slaDueAt, complaint.status);
   const validTransitions = getValidTransitions(complaint.status);
 
   return (

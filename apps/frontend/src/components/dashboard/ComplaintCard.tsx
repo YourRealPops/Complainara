@@ -4,7 +4,7 @@ import { StatusBadge } from "./StatusBadge";
 import { formatSlaCountdown } from "@/lib/format-sla";
 
 export function ComplaintCard({ complaint }: { complaint: Complaint }) {
-  const sla = formatSlaCountdown(complaint.slaDueAt);
+  const sla = formatSlaCountdown(complaint.slaDueAt, complaint.status);
 
   return (
     <Link
