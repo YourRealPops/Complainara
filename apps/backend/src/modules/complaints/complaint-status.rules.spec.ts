@@ -50,7 +50,7 @@ describe('complaint-status.rules', () => {
   describe('getValidTransitions', () => {
     it('returns a copy — mutating the result must not corrupt the rules', () => {
       const transitions = getValidTransitions('SUBMITTED');
-      transitions.push('CLOSED' as never);
+      transitions.push('CLOSED');
       expect(isValidTransition('SUBMITTED', 'CLOSED')).toBe(false);
     });
 

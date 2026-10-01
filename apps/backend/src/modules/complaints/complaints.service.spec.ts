@@ -96,7 +96,7 @@ describe('ComplaintsService — resolver scoping', () => {
       complaint: COMPLAINT_IN_UNIT_A,
     });
     const result = await service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-      status: 'ACKNOWLEDGED' as never,
+      status: 'ACKNOWLEDGED',
     });
     expect(result?.status).toBe('ACKNOWLEDGED');
   });
@@ -108,7 +108,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-        status: 'ACKNOWLEDGED' as never,
+        status: 'ACKNOWLEDGED',
       }),
     ).rejects.toThrow(NotFoundException);
   });
@@ -120,7 +120,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-        status: 'ACKNOWLEDGED' as never,
+        status: 'ACKNOWLEDGED',
       }),
     ).rejects.toThrow(NotFoundException);
   });
@@ -136,7 +136,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-        status: 'ACKNOWLEDGED' as never,
+        status: 'ACKNOWLEDGED',
       }),
     ).resolves.toBeTruthy();
   });
@@ -148,7 +148,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-        status: 'ESCALATED' as never,
+        status: 'ESCALATED',
       }),
     ).rejects.toThrow(ForbiddenException);
   });
@@ -160,7 +160,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'admin1', 'ORG_ADMIN', {
-        status: 'ACKNOWLEDGED' as never,
+        status: 'ACKNOWLEDGED',
       }),
     ).resolves.toBeTruthy();
   });
@@ -172,7 +172,7 @@ describe('ComplaintsService — resolver scoping', () => {
     });
     await expect(
       service.updateStatus('c1', 'org1', 'u1', 'RESOLVER', {
-        status: 'CLOSED' as never,
+        status: 'CLOSED',
       }),
     ).rejects.toThrow('Cannot transition from SUBMITTED to CLOSED');
   });
