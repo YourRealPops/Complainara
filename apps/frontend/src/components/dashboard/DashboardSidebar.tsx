@@ -100,10 +100,17 @@ export function DashboardSidebar() {
 
         <nav className="mt-6 flex flex-col gap-1">
           {visibleItems.map((item) => {
+            const matches = (href: string) =>
+              pathname === href || pathname.startsWith(`${href}/`);
+            // When several nav items match the path, the most specific (longest) one wins
             const active =
-              item.href === "/dashboard"
-                ? pathname === "/dashboard" || pathname.startsWith("/dashboard/complaints")
-                : pathname === item.href;
+              matches(item.href) &&
+              !visibleItems.some(
+                (other) =>
+                  other.href !== item.href &&
+                  other.href.length > item.href.length &&
+                  matches(other.href)
+              );
             return (
               <Link
                 key={item.href}

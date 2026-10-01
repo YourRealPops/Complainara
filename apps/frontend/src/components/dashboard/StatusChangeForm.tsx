@@ -23,10 +23,15 @@ export function StatusChangeForm({
   onStatusChange: (status: ComplaintStatus, note?: string) => Promise<void>;
   disabled: boolean;
 }) {
-  const [selectedStatus, setSelectedStatus] = useState<ComplaintStatus>(
-    validTransitions[0],
-  );
+  const [pickedStatus, setPickedStatus] = useState<ComplaintStatus | null>(null);
   const [note, setNote] = useState("");
+
+  // Derived from props so a stale selection can never be submitted after the
+  // complaint's status (and thus validTransitions) changes mid-session.
+  const selectedStatus =
+    pickedStatus && validTransitions.includes(pickedStatus)
+      ? pickedStatus
+      : validTransitions[0];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +51,7 @@ export function StatusChangeForm({
         <select
           value={selectedStatus}
           onChange={(e) =>
-            setSelectedStatus(e.target.value as ComplaintStatus)
+            setPickedStatus(e.target.value as ComplaintStatus)
           }
           disabled={disabled}
           className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
