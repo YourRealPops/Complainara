@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   getComplaintById,
   updateComplaintStatus,
   getValidTransitions,
+  getResolverTransitions,
   type Complaint,
   type ComplaintStatus,
 } from "@/lib/complaints";
@@ -89,22 +91,46 @@ export default function ComplaintDetailPage() {
   if (!complaint) return null;
 
   const sla = formatSlaCountdown(complaint.slaDueAt, complaint.status);
-  const validTransitions = getValidTransitions(complaint.status);
+  const validTransitions =
+    session?.role === "RESOLVER"
+      ? getResolverTransitions(complaint.status)
+      : getValidTransitions(complaint.status);
+
+  const resolutionNote = complaint.updates
+    ?.filter((u) => u.newStatus === "RESOLVED" && u.note)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )[0]?.note;
+
+  const isOwnComplaint = complaint.complainantId === session?.sub;
 
   return (
     <div className="mx-auto max-w-3xl">
+      {/* Back link */}
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center gap-1 font-mono text-xs text-muted transition-colors hover:text-foreground"
+      >
+        ← Back
+      </Link>
+
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="mt-3 flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="font-display text-2xl font-bold text-foreground">
             {complaint.title}
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            {complaint.category.name} · {complaint.location}
-          </p>
         </div>
         <StatusBadge status={complaint.status} />
       </div>
+
+      {/* Own-complaint banner */}
+      {isOwnComplaint && session?.role !== "COMPLAINANT" && (
+        <p className="mt-3 rounded-lg border border-line bg-glass px-4 py-2 font-mono text-xs text-muted">
+          You filed this complaint — you'll also receive status updates as its complainant.
+        </p>
+      )}
 
       {/* SLA banner */}
       <div
@@ -160,6 +186,33 @@ export default function ComplaintDetailPage() {
           {complaint.description}
         </p>
       </div>
+
+      {/* Resolution summary — shown once RESOLVED */}
+      {complaint.status !== "SUBMITTED" &&
+        complaint.status !== "ACKNOWLEDGED" &&
+        complaint.status !== "IN_PROGRESS" &&
+        complaint.status !== "ESCALATED" &&
+        (resolutionNote || complaint.resolvedAt) && (
+          <div className="mt-4 rounded-xl border border-teal/30 bg-teal/10 p-5">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-teal">
+              Resolution
+            </h2>
+            {resolutionNote ? (
+              <p className="mt-2 text-sm leading-relaxed text-foreground">
+                {resolutionNote}
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-muted">
+                No resolution note was recorded.
+              </p>
+            )}
+            {complaint.resolvedAt && (
+              <p className="mt-2 font-mono text-xs text-muted">
+                Resolved on {new Date(complaint.resolvedAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        )}
 
       {/* Status change */}
       {canChangeStatus && validTransitions.length > 0 && (

@@ -15,3 +15,20 @@ export function isValidTransition(
 ): boolean {
   return ALLOWED_TRANSITIONS[from].includes(to);
 }
+
+/** All transitions considered valid from the given status (mirrored on the frontend for the UI). */
+export function getValidTransitions(from: ComplaintStatus): ComplaintStatus[] {
+  return [...ALLOWED_TRANSITIONS[from]];
+}
+
+/**
+ * Transitions a RESOLVER may perform. ESCALATION is reserved for the
+ * SLA cron job / admins — resolvers work the complaint, they don't escalate it.
+ */
+export function getResolverTransitions(
+  from: ComplaintStatus,
+): ComplaintStatus[] {
+  return getValidTransitions(from).filter(
+    (to) => to !== ComplaintStatus.ESCALATED,
+  );
+}

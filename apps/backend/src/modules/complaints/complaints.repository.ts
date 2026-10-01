@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
@@ -13,6 +14,25 @@ type CreateComplaintData = {
   priority?: ComplaintPriority;
   slaDueAt: Date | null;
 };
+
+/**
+ * Tenant/role filter for resolver views — always org-scoped, always
+ * "unit-assigned OR own complaints". A resolver with no unitId simply
+ * sees only their own complaints (graceful empty queue, not an error).
+ */
+export function getResolverWhere(
+  orgId: string,
+  userId: string,
+  unitId?: string | null,
+): Prisma.ComplaintWhereInput {
+  return {
+    orgId,
+    OR: [
+      { complainantId: userId },
+      ...(unitId ? [{ assignedUnitId: unitId }] : []),
+    ],
+  };
+}
 
 @Injectable()
 export class ComplaintsRepository {
@@ -53,24 +73,14 @@ export class ComplaintsRepository {
     });
   }
 
-  /** Complaints assigned to the user's unit, plus the user's own complaints */
-  async findAllByUnitOrOwner(orgId: string, userId: string) {
-    // Fetch user to get their unitId
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { unitId: true },
-    });
-
-    const where: any = {
-      orgId,
-      OR: [
-        { complainantId: userId },
-        ...(user?.unitId ? [{ assignedUnitId: user.unitId }] : []),
-      ],
-    };
-
+  /**
+   * Complaints assigned to the user's unit, plus the user's own complaints.
+   * unitId comes from the service/controller (which loads the user for
+   * authorization anyway) so the repository stays a pure data layer.
+   */
+  findAllByUnitOrOwner(orgId: string, userId: string, unitId?: string | null) {
     return this.prisma.complaint.findMany({
-      where,
+      where: getResolverWhere(orgId, userId, unitId),
       orderBy: { createdAt: 'desc' },
       include: { category: true, assignedUnit: true },
     });
@@ -79,7 +89,14 @@ export class ComplaintsRepository {
   findById(id: string, orgId: string) {
     return this.prisma.complaint.findFirst({
       where: { id, orgId },
-      include: { category: true, assignedUnit: true, updates: true },
+      include: {
+        category: true,
+        assignedUnit: true,
+        updates: {
+          include: { author: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
     });
   }
 
@@ -112,9 +129,58 @@ export class ComplaintsRepository {
 
       return tx.complaint.findFirst({
         where: { id, orgId },
-        include: { category: true, assignedUnit: true, updates: true },
+        include: {
+          category: true,
+          assignedUnit: true,
+          updates: {
+            include: { author: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
       });
     });
+  }
+
+  /**
+   * Counts for the resolver's queue stats strip, scoped to their unit (plus
+   * own complaints). overdue also counts ESCALATED — an escalated complaint
+   * is by definition one whose SLA was missed.
+   */
+  getQueueSummary(orgId: string, userId: string, unitId?: string | null) {
+    const where = getResolverWhere(orgId, userId, unitId);
+    const now = new Date();
+
+    return Promise.all([
+      this.prisma.complaint.count({
+        where: { ...where, status: { in: ['SUBMITTED', 'ACKNOWLEDGED'] } },
+      }),
+      this.prisma.complaint.count({
+        where: {
+          // AND (not a top-level OR) so the unit/own isolation clause in
+          // `where` isn't overwritten by the overdue conditions.
+          AND: [
+            where,
+            { status: { notIn: ['RESOLVED', 'CLOSED'] } },
+            { OR: [{ slaDueAt: { lt: now } }, { status: 'ESCALATED' }] },
+          ],
+        },
+      }),
+      this.prisma.complaint.count({
+        where: { ...where, status: 'IN_PROGRESS' },
+      }),
+      this.prisma.complaint.count({
+        where: {
+          ...where,
+          status: 'RESOLVED',
+          resolvedAt: { gte: startOfToday(now) },
+        },
+      }),
+    ]).then(([needsAction, overdue, inProgress, resolvedToday]) => ({
+      needsAction,
+      overdue,
+      inProgress,
+      resolvedToday,
+    }));
   }
 
   /**
@@ -158,4 +224,10 @@ export class ComplaintsRepository {
       return tx.complaint.findFirst({ where: { id } });
     });
   }
+}
+
+function startOfToday(now: Date): Date {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }

@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ComplaintsRepository } from './complaints.repository';
@@ -11,7 +12,10 @@ import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { UsersService } from '../users/users.service';
-import { isValidTransition } from './complaint-status.rules';
+import {
+  getResolverTransitions,
+  isValidTransition,
+} from './complaint-status.rules';
 import type { NotificationService } from '../notifications/notifications.interface';
 import type { UserRole } from '@prisma/client';
 
@@ -55,20 +59,28 @@ export class ComplaintsService {
    * - RESOLVER: complaints assigned to their unit + their own
    * - ORG_ADMIN / SUPER_ADMIN: all complaints in the org
    */
-  findAllByOrg(orgId: string, role: UserRole, userId: string) {
+  async findAllByOrg(orgId: string, role: UserRole, userId: string) {
     if (role === 'COMPLAINANT') {
       return this.complaintsRepository.findAllByComplainant(orgId, userId);
     }
     if (role === 'RESOLVER') {
-      return this.complaintsRepository.findAllByUnitOrOwner(orgId, userId);
+      // The JWT carries no unitId, so load the user for the unit clause.
+      // A resolver without a unit just sees their own complaints.
+      const unitId = (await this.usersService.findById(userId)).unitId ?? null;
+      return this.complaintsRepository.findAllByUnitOrOwner(
+        orgId,
+        userId,
+        unitId,
+      );
     }
     // ORG_ADMIN, SUPER_ADMIN see everything
     return this.complaintsRepository.findAllByOrg(orgId);
   }
 
   /**
-   * Internal use: fetch by id + orgId without role scoping.
-   * Used by the controller's status-update path which does its own authorization.
+   * Internal fetch by id + orgId without role scoping.
+   * NOTE: anything reachable from a route must go through findByIdScoped —
+   * this exists for trusted internal flows only.
    */
   async findById(id: string, orgId: string) {
     const complaint = await this.complaintsRepository.findById(id, orgId);
@@ -83,8 +95,15 @@ export class ComplaintsService {
    * - COMPLAINANT: only their own complaint, else 404
    * - RESOLVER: complaint in their unit or their own, else 404
    * - ORG_ADMIN / SUPER_ADMIN: any complaint in the org
+   * Callers that already loaded the user may pass `unitId` to avoid a re-fetch.
    */
-  async findByIdScoped(id: string, orgId: string, role: UserRole, userId: string) {
+  async findByIdScoped(
+    id: string,
+    orgId: string,
+    role: UserRole,
+    userId: string,
+    unitId?: string | null,
+  ) {
     const complaint = await this.complaintsRepository.findById(id, orgId);
     if (!complaint) {
       throw new NotFoundException(`Complaint with id ${id} not found`);
@@ -95,10 +114,13 @@ export class ComplaintsService {
         throw new NotFoundException(`Complaint with id ${id} not found`);
       }
     } else if (role === 'RESOLVER') {
-      // Fetch user to check unitId
-      const user = await this.usersService.findById(userId);
+      const resolvedUnitId =
+        unitId !== undefined
+          ? unitId
+          : ((await this.usersService.findById(userId)).unitId ?? null);
       const isOwn = complaint.complainantId === userId;
-      const isInUnit = user?.unitId && complaint.assignedUnitId === user.unitId;
+      const isInUnit =
+        resolvedUnitId !== null && complaint.assignedUnitId === resolvedUnitId;
       if (!isOwn && !isInUnit) {
         throw new NotFoundException(`Complaint with id ${id} not found`);
       }
@@ -108,17 +130,51 @@ export class ComplaintsService {
     return complaint;
   }
 
+  /**
+   * Counts for the resolver queue stats strip. Same unit + own-complaint
+   * scope as findAllByOrg. overdue includes ESCALATED — an escalated
+   * complaint is one whose SLA was already missed.
+   */
+  async getQueueSummary(orgId: string, userId: string) {
+    const unitId = (await this.usersService.findById(userId)).unitId ?? null;
+    return this.complaintsRepository.getQueueSummary(orgId, userId, unitId);
+  }
+
   async updateStatus(
     id: string,
     orgId: string,
     authorId: string,
+    role: UserRole,
     dto: UpdateStatusDto,
   ) {
-    const complaint = await this.findById(id, orgId);
+    // Role-scoped fetch: a RESOLVER can only touch complaints assigned to
+    // their unit (or ones they filed themselves); COMPLAINANTs only their own;
+    // admins org-wide. findByIdScoped 404s anything outside the caller's scope.
+    let unitId: string | null | undefined;
+    if (role === 'RESOLVER') {
+      unitId = (await this.usersService.findById(authorId)).unitId ?? null;
+    }
+    const complaint = await this.findByIdScoped(
+      id,
+      orgId,
+      role,
+      authorId,
+      unitId,
+    );
 
     if (!isValidTransition(complaint.status, dto.status)) {
       throw new BadRequestException(
         `Cannot transition from ${complaint.status} to ${dto.status}`,
+      );
+    }
+
+    if (
+      role === 'RESOLVER' &&
+      !getResolverTransitions(complaint.status).includes(dto.status)
+    ) {
+      // ESCALATED is reserved for the SLA cron / admins — resolvers don't escalate.
+      throw new ForbiddenException(
+        'Resolvers cannot escalate complaints — escalation happens automatically on SLA breach',
       );
     }
 
@@ -184,6 +240,8 @@ export class ComplaintsService {
       escalated++;
     }
 
-    this.logger.log(`Escalation check complete. Escalated ${escalated} complaint(s).`);
+    this.logger.log(
+      `Escalation check complete. Escalated ${escalated} complaint(s).`,
+    );
   }
 }

@@ -42,6 +42,11 @@ export function ComplaintTimeline({ updates }: { updates: ComplaintUpdate[] }) {
               <span className="font-mono font-medium text-foreground">
                 {STATUS_LABELS[update.newStatus]}
               </span>
+              {update.author?.name && (
+                <span className="text-xs text-muted">
+                  · by {update.author.name}
+                </span>
+              )}
             </div>
             {update.note && (
               <p className="mt-1 text-sm text-muted">{update.note}</p>

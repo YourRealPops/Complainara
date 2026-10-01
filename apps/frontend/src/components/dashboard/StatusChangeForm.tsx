@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ComplaintStatus } from "@/lib/complaints";
+import { TRANSITIONS_REQUIRING_NOTE } from "@/lib/complaints";
 
 const STATUS_LABELS: Record<ComplaintStatus, string> = {
   SUBMITTED: "Submitted",
@@ -33,8 +34,14 @@ export function StatusChangeForm({
       ? pickedStatus
       : validTransitions[0];
 
+  const noteRequired = selectedStatus
+    ? TRANSITIONS_REQUIRING_NOTE.includes(selectedStatus)
+    : false;
+  const noteMissing = noteRequired && note.trim().length === 0;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (noteMissing) return;
     await onStatusChange(selectedStatus, note || undefined);
     setNote("");
   }
@@ -47,25 +54,33 @@ export function StatusChangeForm({
       <h2 className="font-display text-sm font-bold uppercase tracking-wide text-muted">
         Change Status
       </h2>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <select
-          value={selectedStatus}
-          onChange={(e) =>
-            setPickedStatus(e.target.value as ComplaintStatus)
-          }
-          disabled={disabled}
-          className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
-        >
-          {validTransitions.map((status) => (
-            <option key={status} value={status}>
-              {STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
 
+      {/* One button per transition that is actually valid from the current status */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {validTransitions.map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => setPickedStatus(status)}
+            disabled={disabled}
+            aria-pressed={selectedStatus === status}
+            className={`rounded-full border px-4 py-1.5 font-mono text-xs transition-colors disabled:opacity-50 ${
+              selectedStatus === status
+                ? "border-teal/40 bg-teal/15 text-teal"
+                : "border-line text-muted hover:bg-bg hover:text-foreground"
+            }`}
+          >
+            → {STATUS_LABELS[status]}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <input
           type="text"
-          placeholder="Optional note…"
+          placeholder={
+            noteRequired ? "What was done to fix this? (required)…" : "Optional note…"
+          }
           value={note}
           onChange={(e) => setNote(e.target.value)}
           disabled={disabled}
@@ -74,12 +89,19 @@ export function StatusChangeForm({
 
         <button
           type="submit"
-          disabled={disabled}
+          disabled={disabled || noteMissing}
           className="rounded-lg bg-teal px-4 py-2 font-mono text-xs font-medium text-bg transition-colors hover:bg-teal/80 disabled:opacity-50"
         >
           {disabled ? "Updating…" : "Update"}
         </button>
       </div>
+
+      {noteRequired && (
+        <p className="mt-2 font-mono text-xs text-muted">
+          A note is required for this transition — it becomes the resolution
+          summary the complainant sees.
+        </p>
+      )}
     </form>
   );
 }

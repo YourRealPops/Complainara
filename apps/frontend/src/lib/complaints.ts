@@ -14,6 +14,7 @@ export type ComplaintUpdate = {
   id: string;
   complaintId: string;
   authorId: string;
+  author?: { id: string; name: string } | null;
   note: string | null;
   oldStatus: ComplaintStatus | null;
   newStatus: ComplaintStatus;
@@ -36,8 +37,19 @@ export type Complaint = {
   updates?: ComplaintUpdate[];
 };
 
+export type QueueSummary = {
+  needsAction: number;
+  overdue: number;
+  inProgress: number;
+  resolvedToday: number;
+};
+
 export function getComplaints() {
   return apiFetch<Complaint[]>("/complaints");
+}
+
+export function getQueueSummary() {
+  return apiFetch<QueueSummary>("/complaints/queue-summary");
 }
 
 export function getComplaintById(id: string) {
@@ -81,3 +93,13 @@ const ALLOWED_TRANSITIONS: Record<ComplaintStatus, ComplaintStatus[]> = {
 export function getValidTransitions(status: ComplaintStatus): ComplaintStatus[] {
   return ALLOWED_TRANSITIONS[status];
 }
+
+/** Mirror of backend getResolverTransitions — escalation is system/admin-only. */
+export function getResolverTransitions(status: ComplaintStatus): ComplaintStatus[] {
+  return ALLOWED_TRANSITIONS[status].filter((s) => s !== "ESCALATED");
+}
+
+/** Transitions that require a note — RESOLVED's note is the resolution summary the complainant sees. */
+export const TRANSITIONS_REQUIRING_NOTE: readonly ComplaintStatus[] = [
+  "RESOLVED",
+];

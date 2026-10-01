@@ -9,7 +9,9 @@ import type { SessionUser } from "@/lib/auth-client";
 type NavItem = { href: string; label: string; roles?: string[] };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Complaints" },
+  { href: "/dashboard", label: "Complaints", roles: ["ORG_ADMIN", "SUPER_ADMIN", "COMPLAINANT"] },
+  { href: "/dashboard", label: "My queue", roles: ["RESOLVER"] },
+  { href: "/dashboard/resolved", label: "Resolved", roles: ["RESOLVER"] },
   { href: "/dashboard/complaints/new", label: "File a complaint", roles: ["COMPLAINANT"] },
   { href: "/dashboard/units", label: "Units", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
   { href: "/dashboard/categories", label: "Categories", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
