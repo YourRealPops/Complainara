@@ -7,13 +7,13 @@ export function ProblemStatement() {
       <FadeIn>
         <GlassCard className="p-10 text-center">
           <p className="font-display text-xl font-semibold leading-snug text-foreground md:text-2xl">
-            &ldquo;Right now, a complaint means walking to find a warden or
-            house master — and hoping. Days pass. No one knows if it&apos;s
-            being handled, or forgotten.&rdquo;
+            &ldquo;Right now, reporting a problem means tracking someone responsible down,
+            explaining it, and hoping the issue gets resolved. Days pass. No one knows if it&apos;s being
+            handled, or forgotten.&rdquo;
           </p>
           <p className="mt-4 text-sm text-muted">
-            Complainara replaces the walk and the wait with a routed ticket
-            and a deadline.
+            Complainara replaces the walk and the wait with a routed ticket and
+            a deadline.
           </p>
         </GlassCard>
       </FadeIn>
