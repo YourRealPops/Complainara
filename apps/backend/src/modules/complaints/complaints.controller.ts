@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { AssignComplaintDto } from './dto/assign-complaint.dto';
 import { ComplaintsService } from './complaints.service';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { CurrentOrg } from '../../common/decorators/current-org.decorator';
@@ -27,6 +28,21 @@ export class ComplaintsController {
     @Body() dto: CreateComplaintDto,
   ) {
     return this.complaintsService.create(orgId, user.sub, dto);
+  }
+
+  /**
+   * ORG_ADMIN only — resolvers cannot self-assign or reassign.
+   * Assign, reassign or unassign (resolverId: null) the resolver.
+   */
+  @Roles(UserRole.ORG_ADMIN)
+  @Patch(':id/assign')
+  assign(
+    @Param('id') id: string,
+    @CurrentOrg() orgId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AssignComplaintDto,
+  ) {
+    return this.complaintsService.assign(id, orgId, user.sub, dto);
   }
 
   @Patch(':id/status')

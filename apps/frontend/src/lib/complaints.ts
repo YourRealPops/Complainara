@@ -34,6 +34,9 @@ export type Complaint = {
   resolvedAt: string | null;
   category: { id: string; name: string };
   assignedUnit: { id: string; name: string } | null;
+  /** Resolver the complaint is assigned to — null while unassigned. */
+  assignedResolverId?: string | null;
+  assignedResolver?: { id: string; name: string } | null;
   updates?: ComplaintUpdate[];
 };
 
@@ -66,6 +69,17 @@ export function createComplaint(data: {
   return apiFetch<Complaint>("/complaints", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+/**
+ * ORG_ADMIN only. Assign / reassign (resolverId) or unassign (resolverId: null)
+ * the resolver on a complaint. Returns the updated complaint.
+ */
+export function assignComplaint(id: string, resolverId: string | null) {
+  return apiFetch<Complaint>(`/complaints/${id}/assign`, {
+    method: "PATCH",
+    body: JSON.stringify({ resolverId }),
   });
 }
 

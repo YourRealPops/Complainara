@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE "organizations" ADD COLUMN "join_code" TEXT NOT NULL DEFAULT '',
+ALTER TABLE "organizations" ADD COLUMN "join_code" TEXT NOT NULL,
     ADD COLUMN "allowed_email_domain" TEXT;
 
 -- CreateIndex

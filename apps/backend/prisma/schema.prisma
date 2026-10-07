@@ -59,6 +59,7 @@ model User {
   unit         Unit?        @relation(fields: [unitId], references: [id])
 
   complaintsSubmitted Complaint[]       @relation("Complainant")
+  complaintsAssigned  Complaint[]       @relation("AssignedResolver")
   complaintUpdates    ComplaintUpdate[]
 
   @@index([orgId])
@@ -100,6 +101,7 @@ model Complaint {
   complainantId   String            @map("complainant_id")
   categoryId      String            @map("category_id")
   assignedUnitId  String?           @map("assigned_unit_id")
+  assignedResolverId String?        @map("assigned_resolver_id")
   title           String
   description     String
   location        String
@@ -113,12 +115,14 @@ model Complaint {
   complainant  User         @relation("Complainant", fields: [complainantId], references: [id])
   category     Category     @relation(fields: [categoryId], references: [id])
   assignedUnit Unit?        @relation(fields: [assignedUnitId], references: [id])
+  assignedResolver User?    @relation("AssignedResolver", fields: [assignedResolverId], references: [id])
 
   updates     ComplaintUpdate[]
   attachments Attachment[]
 
   @@index([orgId])
   @@index([status])
+  @@index([assignedResolverId])
   @@map("complaints")
 }
 

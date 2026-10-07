@@ -12,8 +12,16 @@ export type User = {
   createdAt: string;
 };
 
-export function getUsers() {
-  return apiFetch<User[]>("/users");
+/**
+ * Org member list (ORG_ADMIN / SUPER_ADMIN). Optional filters back the
+ * assignment dropdown: e.g. { role: "RESOLVER" }.
+ */
+export function getUsers(filters?: { role?: UserRole; unitId?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.role) params.set("role", filters.role);
+  if (filters?.unitId) params.set("unitId", filters.unitId);
+  const query = params.toString();
+  return apiFetch<User[]>(`/users${query ? `?${query}` : ""}`);
 }
 
 export function createUser(data: {

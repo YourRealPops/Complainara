@@ -10,6 +10,7 @@ import { Cron } from '@nestjs/schedule';
 import { ComplaintsRepository } from './complaints.repository';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { AssignComplaintDto } from './dto/assign-complaint.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { UsersService } from '../users/users.service';
 import {
@@ -56,7 +57,8 @@ export class ComplaintsService {
   /**
    * Role-scoped list of complaints:
    * - COMPLAINANT: only their own complaints
-   * - RESOLVER: complaints assigned to their unit + their own
+   * - RESOLVER: complaints assigned to THEM + ones they filed
+   *   (never the whole unit queue — unit membership grants nothing)
    * - ORG_ADMIN / SUPER_ADMIN: all complaints in the org
    */
   async findAllByOrg(orgId: string, role: UserRole, userId: string) {
@@ -64,14 +66,7 @@ export class ComplaintsService {
       return this.complaintsRepository.findAllByComplainant(orgId, userId);
     }
     if (role === 'RESOLVER') {
-      // The JWT carries no unitId, so load the user for the unit clause.
-      // A resolver without a unit just sees their own complaints.
-      const unitId = (await this.usersService.findById(userId)).unitId ?? null;
-      return this.complaintsRepository.findAllByUnitOrOwner(
-        orgId,
-        userId,
-        unitId,
-      );
+      return this.complaintsRepository.findAllByResolver(orgId, userId);
     }
     // ORG_ADMIN, SUPER_ADMIN see everything
     return this.complaintsRepository.findAllByOrg(orgId);
@@ -93,16 +88,16 @@ export class ComplaintsService {
   /**
    * Public-facing fetch with role scoping.
    * - COMPLAINANT: only their own complaint, else 404
-   * - RESOLVER: complaint in their unit or their own, else 404
+   * - RESOLVER: assigned to them OR filed by them, else 404.
+   *   A complaint assigned to a DIFFERENT resolver in their same unit
+   *   is invisible to them (404).
    * - ORG_ADMIN / SUPER_ADMIN: any complaint in the org
-   * Callers that already loaded the user may pass `unitId` to avoid a re-fetch.
    */
   async findByIdScoped(
     id: string,
     orgId: string,
     role: UserRole,
     userId: string,
-    unitId?: string | null,
   ) {
     const complaint = await this.complaintsRepository.findById(id, orgId);
     if (!complaint) {
@@ -114,14 +109,9 @@ export class ComplaintsService {
         throw new NotFoundException(`Complaint with id ${id} not found`);
       }
     } else if (role === 'RESOLVER') {
-      const resolvedUnitId =
-        unitId !== undefined
-          ? unitId
-          : ((await this.usersService.findById(userId)).unitId ?? null);
       const isOwn = complaint.complainantId === userId;
-      const isInUnit =
-        resolvedUnitId !== null && complaint.assignedUnitId === resolvedUnitId;
-      if (!isOwn && !isInUnit) {
+      const isAssigned = complaint.assignedResolverId === userId;
+      if (!isOwn && !isAssigned) {
         throw new NotFoundException(`Complaint with id ${id} not found`);
       }
     }
@@ -131,13 +121,82 @@ export class ComplaintsService {
   }
 
   /**
-   * Counts for the resolver queue stats strip. Same unit + own-complaint
-   * scope as findAllByOrg. overdue includes ESCALATED — an escalated
+   * Counts for the resolver queue stats strip, scoped to what is assigned
+   * to them (plus their own). overdue includes ESCALATED — an escalated
    * complaint is one whose SLA was already missed.
    */
   async getQueueSummary(orgId: string, userId: string) {
-    const unitId = (await this.usersService.findById(userId)).unitId ?? null;
-    return this.complaintsRepository.getQueueSummary(orgId, userId, unitId);
+    return this.complaintsRepository.getQueueSummary(orgId, userId);
+  }
+
+  /**
+   * ORG_ADMIN assigns / reassigns / unassigns a resolver.
+   * - resolverId must be a RESOLVER in the same org (wrong org → 404, so
+   *   cross-org ids can't be probed)
+   * - unit match is NOT hard-enforced (admin decision): a cross-unit
+   *   assignment is allowed and called out in the audit note
+   * - resolverId: null unassigns
+   */
+  async assign(
+    id: string,
+    orgId: string,
+    authorId: string,
+    dto: AssignComplaintDto,
+  ) {
+    if (dto.resolverId === undefined) {
+      throw new BadRequestException(
+        'resolverId is required — send null to unassign',
+      );
+    }
+
+    const complaint = await this.complaintsRepository.findById(id, orgId);
+    if (!complaint) {
+      throw new NotFoundException(`Complaint with id ${id} not found`);
+    }
+
+    let resolver: { id: string; name: string; unitId: string | null } | null =
+      null;
+    if (dto.resolverId !== null) {
+      const user = await this.usersService.findById(dto.resolverId);
+      if (user.orgId !== orgId || user.role !== 'RESOLVER') {
+        // Same 404 whether the id exists elsewhere or not — no cross-org probing
+        throw new NotFoundException(`Resolver not found in this organization`);
+      }
+      resolver = { id: user.id, name: user.name, unitId: user.unitId };
+    }
+
+    const previous = complaint.assignedResolver;
+    const unitMismatch =
+      resolver !== null &&
+      complaint.assignedUnitId !== null &&
+      resolver.unitId !== complaint.assignedUnitId;
+
+    let note: string;
+    if (resolver === null) {
+      note = previous
+        ? `Unassigned (was ${previous.name})`
+        : 'Unassigned (no resolver was assigned)';
+    } else if (previous) {
+      note = `Reassigned from ${previous.name} to ${resolver.name}`;
+    } else {
+      note = `Assigned to ${resolver.name}`;
+    }
+    if (unitMismatch) {
+      note += ' — note: resolver is not in the complaint\u2019s unit';
+    }
+
+    const updated = await this.complaintsRepository.assign(
+      id,
+      orgId,
+      authorId,
+      resolver?.id ?? null,
+      complaint.status,
+      note,
+    );
+    if (!updated) {
+      throw new NotFoundException(`Complaint with id ${id} not found`);
+    }
+    return updated;
   }
 
   async updateStatus(
@@ -147,20 +206,18 @@ export class ComplaintsService {
     role: UserRole,
     dto: UpdateStatusDto,
   ) {
-    // Role-scoped fetch: a RESOLVER can only touch complaints assigned to
-    // their unit (or ones they filed themselves); COMPLAINANTs only their own;
-    // admins org-wide. findByIdScoped 404s anything outside the caller's scope.
-    let unitId: string | null | undefined;
-    if (role === 'RESOLVER') {
-      unitId = (await this.usersService.findById(authorId)).unitId ?? null;
+    // Role-scoped fetch: a RESOLVER only reaches complaints assigned to them
+    // (or ones they filed); COMPLAINANTs only their own; admins org-wide.
+    // findByIdScoped 404s anything outside the caller's scope.
+    const complaint = await this.findByIdScoped(id, orgId, role, authorId);
+
+    // Acting (status changes) requires being the assigned resolver —
+    // seeing a complaint you filed does not make it yours to work.
+    if (role === 'RESOLVER' && complaint.assignedResolverId !== authorId) {
+      throw new ForbiddenException(
+        'Only the assigned resolver can update this complaint',
+      );
     }
-    const complaint = await this.findByIdScoped(
-      id,
-      orgId,
-      role,
-      authorId,
-      unitId,
-    );
 
     if (!isValidTransition(complaint.status, dto.status)) {
       throw new BadRequestException(

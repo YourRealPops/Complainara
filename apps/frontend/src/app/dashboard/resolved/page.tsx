@@ -10,7 +10,7 @@ import { ApiError } from "@/lib/api";
 import { QueueCard } from "@/components/dashboard/QueueCard";
 import { sortQueueByUrgency } from "@/lib/queue";
 
-/** Resolver's history: this unit's RESOLVED + CLOSED complaints, newest first. */
+/** Resolver's history: RESOLVED + CLOSED complaints in their scope, newest first. */
 export default function ResolvedPage() {
   const session = getSession();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -56,8 +56,9 @@ export default function ResolvedPage() {
         Resolved
       </h1>
       <p className="mt-1 text-sm text-muted">
-        Complaints your unit has resolved or closed.{" "}
-        {session?.role === "RESOLVER" && "Scope: your unit + complaints you filed."}
+        Resolved or closed complaints.{" "}
+        {session?.role === "RESOLVER" &&
+          "Scope: complaints assigned to you + complaints you filed."}
       </p>
 
       {complaints.length === 0 ? (

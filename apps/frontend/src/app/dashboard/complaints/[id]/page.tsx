@@ -17,6 +17,7 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatSlaCountdown } from "@/lib/format-sla";
 import { ComplaintTimeline } from "@/components/dashboard/ComplaintTimeline";
 import { StatusChangeForm } from "@/components/dashboard/StatusChangeForm";
+import { AssignResolverCard } from "@/components/dashboard/AssignResolverCard";
 
 const STATUS_LABELS: Record<ComplaintStatus, string> = {
   SUBMITTED: "Submitted",
@@ -40,6 +41,7 @@ export default function ComplaintDetailPage() {
   const session = getSession();
   const canChangeStatus =
     session?.role === "RESOLVER" || session?.role === "ORG_ADMIN";
+  const isAdmin = session?.role === "ORG_ADMIN";
 
   const fetchComplaint = useCallback(async () => {
     try {
@@ -168,6 +170,9 @@ export default function ComplaintDetailPage() {
           Unit: {complaint.assignedUnit?.name ?? "Unassigned"}
         </span>
         <span className="text-muted">
+          Resolver: {complaint.assignedResolver?.name ?? "Unassigned"}
+        </span>
+        <span className="text-muted">
           Created: {new Date(complaint.createdAt).toLocaleDateString()}
         </span>
         {complaint.resolvedAt && (
@@ -186,6 +191,14 @@ export default function ComplaintDetailPage() {
           {complaint.description}
         </p>
       </div>
+
+      {/* Admin: assign / reassign / unassign the resolver */}
+      {isAdmin && (
+        <AssignResolverCard
+          complaint={complaint}
+          onAssigned={setComplaint}
+        />
+      )}
 
       {/* Resolution summary — shown once RESOLVED */}
       {complaint.status !== "SUBMITTED" &&

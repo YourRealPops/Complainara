@@ -17,22 +17,27 @@ type CreateComplaintData = {
 
 /**
  * Tenant/role filter for resolver views — always org-scoped, always
- * "unit-assigned OR own complaints". A resolver with no unitId simply
- * sees only their own complaints (graceful empty queue, not an error).
+ * "assigned to me OR filed by me". Unit membership grants nothing:
+ * a resolver only sees complaints specifically assigned to them
+ * (plus ones they filed personally). A resolver with no assignments
+ * simply gets an empty queue, not an error.
  */
 export function getResolverWhere(
   orgId: string,
   userId: string,
-  unitId?: string | null,
 ): Prisma.ComplaintWhereInput {
   return {
     orgId,
-    OR: [
-      { complainantId: userId },
-      ...(unitId ? [{ assignedUnitId: unitId }] : []),
-    ],
+    OR: [{ assignedResolverId: userId }, { complainantId: userId }],
   };
 }
+
+/** Consistent include for list/detail reads. */
+const COMPLAINT_INCLUDE = {
+  category: true,
+  assignedUnit: true,
+  assignedResolver: { select: { id: true, name: true } },
+} satisfies Prisma.ComplaintInclude;
 
 @Injectable()
 export class ComplaintsRepository {
@@ -60,7 +65,7 @@ export class ComplaintsRepository {
     return this.prisma.complaint.findMany({
       where: { orgId },
       orderBy: { createdAt: 'desc' },
-      include: { category: true, assignedUnit: true },
+      include: COMPLAINT_INCLUDE,
     });
   }
 
@@ -69,20 +74,20 @@ export class ComplaintsRepository {
     return this.prisma.complaint.findMany({
       where: { orgId, complainantId },
       orderBy: { createdAt: 'desc' },
-      include: { category: true, assignedUnit: true },
+      include: COMPLAINT_INCLUDE,
     });
   }
 
   /**
-   * Complaints assigned to the user's unit, plus the user's own complaints.
-   * unitId comes from the service/controller (which loads the user for
-   * authorization anyway) so the repository stays a pure data layer.
+   * Complaints assigned to this resolver, plus the ones they filed
+   * themselves. NOT their unit's queue — unit membership grants no
+   * visibility (see getResolverWhere).
    */
-  findAllByUnitOrOwner(orgId: string, userId: string, unitId?: string | null) {
+  findAllByResolver(orgId: string, userId: string) {
     return this.prisma.complaint.findMany({
-      where: getResolverWhere(orgId, userId, unitId),
+      where: getResolverWhere(orgId, userId),
       orderBy: { createdAt: 'desc' },
-      include: { category: true, assignedUnit: true },
+      include: COMPLAINT_INCLUDE,
     });
   }
 
@@ -90,8 +95,7 @@ export class ComplaintsRepository {
     return this.prisma.complaint.findFirst({
       where: { id, orgId },
       include: {
-        category: true,
-        assignedUnit: true,
+        ...COMPLAINT_INCLUDE,
         updates: {
           include: { author: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'asc' },
@@ -130,8 +134,7 @@ export class ComplaintsRepository {
       return tx.complaint.findFirst({
         where: { id, orgId },
         include: {
-          category: true,
-          assignedUnit: true,
+          ...COMPLAINT_INCLUDE,
           updates: {
             include: { author: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'asc' },
@@ -142,12 +145,59 @@ export class ComplaintsRepository {
   }
 
   /**
-   * Counts for the resolver's queue stats strip, scoped to their unit (plus
-   * own complaints). overdue also counts ESCALATED — an escalated complaint
-   * is by definition one whose SLA was missed.
+   * Assign / reassign / unassign a resolver, with an audit-log entry.
+   * The updateMany is scoped with id + orgId (tenant isolation): if the
+   * complaint vanished or left the org mid-flight, count is 0 and we 404.
+   * The status itself does not change — oldStatus === newStatus keeps the
+   * existing ComplaintUpdate pattern intact, the note carries the details.
    */
-  getQueueSummary(orgId: string, userId: string, unitId?: string | null) {
-    const where = getResolverWhere(orgId, userId, unitId);
+  async assign(
+    id: string,
+    orgId: string,
+    authorId: string,
+    resolverId: string | null,
+    oldStatus: ComplaintStatus,
+    note: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.complaint.updateMany({
+        where: { id, orgId },
+        data: { assignedResolverId: resolverId },
+      });
+      if (result.count === 0) {
+        return null;
+      }
+
+      await tx.complaintUpdate.create({
+        data: {
+          complaintId: id,
+          authorId,
+          oldStatus,
+          newStatus: oldStatus,
+          note,
+        },
+      });
+
+      return tx.complaint.findFirst({
+        where: { id, orgId },
+        include: {
+          ...COMPLAINT_INCLUDE,
+          updates: {
+            include: { author: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Counts for the resolver's queue stats strip, scoped to complaints
+   * assigned to them (plus their own). overdue also counts ESCALATED —
+   * an escalated complaint is by definition one whose SLA was missed.
+   */
+  getQueueSummary(orgId: string, userId: string) {
+    const where = getResolverWhere(orgId, userId);
     const now = new Date();
 
     return Promise.all([
@@ -156,7 +206,7 @@ export class ComplaintsRepository {
       }),
       this.prisma.complaint.count({
         where: {
-          // AND (not a top-level OR) so the unit/own isolation clause in
+          // AND (not a top-level OR) so the assigned/own isolation clause in
           // `where` isn't overwritten by the overdue conditions.
           AND: [
             where,
