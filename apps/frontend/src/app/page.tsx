@@ -5,6 +5,7 @@ import { HowItWorks } from "@/components/landing/HowItWorks";
 import { WhoItsFor } from "@/components/landing/WhoItsFor";
 import { Features } from "@/components/landing/Features";
 import { CtaBanner } from "@/components/landing/CtaBanner";
+import { ScrollToTop } from "@/components/landing/ScrollToTop";
 import { Footer } from "@/components/landing/Footer";
 
 export default function LandingPage() {
@@ -17,6 +18,7 @@ export default function LandingPage() {
       <WhoItsFor />
       <Features />
       <CtaBanner />
+      <ScrollToTop />
       <Footer />
     </main>
   );
