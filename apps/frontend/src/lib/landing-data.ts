@@ -34,6 +34,10 @@ export const AUDIENCES = [
     title: "Any institution",
     body: "If people report problems and someone else is meant to fix them, Complainara gives both sides a paper trail.",
   },
+  {
+    title: "HMO Institutions",
+    body: "Organizations that manage more than one facility can manage and track their employees easily."
+  }
 ] as const;
 
 export const FEATURES = [
