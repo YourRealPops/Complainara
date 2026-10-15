@@ -10,7 +10,7 @@ export function WhoItsFor() {
           Who it&apos;s for
         </h2>
       </FadeIn>
-      <div className="mt-10 grid gap-6 md:grid-cols-3">
+      <div className="mt-10 grid gap-6 md:grid-cols-2">
         {AUDIENCES.map((audience, i) => (
           <FadeIn key={audience.title} delay={i * 0.1}>
             <GlassCard className="h-full p-6 transition-transform hover:-translate-y-1">
