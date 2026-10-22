@@ -27,9 +27,14 @@ export function ComplaintCard({ complaint }: { complaint: Complaint }) {
         <span className={sla.overdue ? "text-stamp" : "text-muted"}>
           {sla.label}
         </span>
-        <span className="text-muted">
-          {complaint.assignedUnit?.name ?? "Unassigned"}
-        </span>
+        {complaint.assignedUnit ? (
+          <span className="text-muted">{complaint.assignedUnit.name}</span>
+        ) : (
+          // No unit = the branch has no route for this category yet.
+          <span className="rounded-full bg-stamp/10 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-stamp">
+            Needs routing
+          </span>
+        )}
       </div>
     </Link>
   );

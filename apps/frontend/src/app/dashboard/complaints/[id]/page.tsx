@@ -167,7 +167,14 @@ export default function ComplaintDetailPage() {
           Priority: {complaint.priority}
         </span>
         <span className="text-muted">
-          Unit: {complaint.assignedUnit?.name ?? "Unassigned"}
+          Unit:{" "}
+          {complaint.assignedUnit ? (
+            complaint.assignedUnit.name
+          ) : (
+            <span className="rounded-full bg-stamp/10 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-stamp">
+              Needs routing
+            </span>
+          )}
         </span>
         <span className="text-muted">
           Resolver: {complaint.assignedResolver?.name ?? "Unassigned"}

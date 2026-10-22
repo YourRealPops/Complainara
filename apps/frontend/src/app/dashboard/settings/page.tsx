@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   getJoinCode,
   regenerateJoinCode,
   updateOrganizationSettings,
 } from "@/lib/organization";
 import { ApiError } from "@/lib/api";
+import { useBranches } from "@/hooks/useBranches";
 
 export default function SettingsPage() {
   const [joinCode, setJoinCode] = useState("");
@@ -19,6 +21,8 @@ export default function SettingsPage() {
   const [domain, setDomain] = useState("");
   const [savingDomain, setSavingDomain] = useState(false);
   const [domainSaved, setDomainSaved] = useState(false);
+
+  const { isMultiBranch, loading: branchesLoading } = useBranches();
 
   useEffect(() => {
     getJoinCode()
@@ -137,6 +141,27 @@ export default function SettingsPage() {
           >
             {regenerating ? "Regenerating…" : "Regenerate code"}
           </button>
+        </div>
+      )}
+
+      {/* Add-a-branch entry point — ONLY for single-site orgs (hidden once a
+          second branch exists, at which point Branches becomes a normal nav
+          item). Keeps multi-site discoverable without prominent branch UI. */}
+      {!branchesLoading && !isMultiBranch && (
+        <div className="mt-6 rounded-xl border border-dashed border-line bg-surface/50 p-5">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wide text-muted">
+            Multiple sites?
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            If this organization runs from more than one location, add a branch
+            to give each site its own join code, units, and complaint routing.
+          </p>
+          <Link
+            href="/dashboard/branches"
+            className="mt-3 inline-block font-mono text-xs text-teal underline-offset-2 hover:underline"
+          >
+            + Add a branch
+          </Link>
         </div>
       )}
 

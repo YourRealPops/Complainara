@@ -3,7 +3,18 @@ import { jwtDecode } from "jwt-decode";
 export type SessionUser = {
   sub: string;
   orgId: string;
-  role: "COMPLAINANT" | "RESOLVER" | "ORG_ADMIN" | "SUPER_ADMIN";
+  role:
+    | "COMPLAINANT"
+    | "RESOLVER"
+    | "BRANCH_ADMIN"
+    | "ORG_ADMIN"
+    | "SUPER_ADMIN";
+  /**
+   * null = HQ (ORG_ADMIN / SUPER_ADMIN). Legacy tokens issued before
+   * multi-branch support omit it entirely — normalize a missing value to
+   * null (correct for the HQ admins those tokens belong to).
+   */
+  branchId?: string | null;
   exp: number;
 };
 

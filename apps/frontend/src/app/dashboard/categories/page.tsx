@@ -6,11 +6,16 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  getCategoryRoutes,
+  setCategoryRoute,
+  removeCategoryRoute,
   type Category,
+  type CategoryRoute,
 } from "@/lib/categories";
 import { getUnits, type Unit } from "@/lib/units";
 import { getSession } from "@/lib/auth-client";
 import { ApiError } from "@/lib/api";
+import { useBranches } from "@/hooks/useBranches";
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -18,10 +23,9 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Create form
+  // Create form (name + SLA only — routing is a separate step)
   const [newName, setNewName] = useState("");
   const [newSlaHours, setNewSlaHours] = useState(24);
-  const [newUnitId, setNewUnitId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -29,11 +33,25 @@ export default function CategoriesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editSlaHours, setEditSlaHours] = useState(24);
-  const [editUnitId, setEditUnitId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Per-branch routing
+  const [routesCatId, setRoutesCatId] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<CategoryRoute[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routeError, setRouteError] = useState("");
+  const [routeSavingKey, setRouteSavingKey] = useState<string | null>(null);
 
   const session = getSession();
   const isAdmin = session?.role === "ORG_ADMIN";
+  // Routing is an HQ (ORG_ADMIN) policy — hidden from everyone else.
+  const canRoute = isAdmin;
+
+  const {
+    branches,
+    loading: branchesLoading,
+    isMultiBranch,
+  } = useBranches();
 
   async function fetchData() {
     try {
@@ -41,9 +59,7 @@ export default function CategoriesPage() {
       setCategories(cats);
       setUnits(unts);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to load data.",
-      );
+      setError(err instanceof ApiError ? err.message : "Failed to load data.");
     } finally {
       setLoading(false);
     }
@@ -58,15 +74,10 @@ export default function CategoriesPage() {
     setCreating(true);
     setCreateError("");
     try {
-      const cat = await createCategory({
-        name: newName,
-        slaHours: newSlaHours,
-        ...(newUnitId && { defaultUnitId: newUnitId }),
-      });
+      const cat = await createCategory({ name: newName, slaHours: newSlaHours });
       setCategories((prev) => [...prev, cat]);
       setNewName("");
       setNewSlaHours(24);
-      setNewUnitId("");
     } catch (err) {
       setCreateError(
         err instanceof ApiError ? err.message : "Failed to create category.",
@@ -80,30 +91,23 @@ export default function CategoriesPage() {
     setEditingId(cat.id);
     setEditName(cat.name);
     setEditSlaHours(cat.slaHours);
-    setEditUnitId(cat.defaultUnitId ?? "");
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditName("");
     setEditSlaHours(24);
-    setEditUnitId("");
   }
 
   async function handleSave(id: string) {
     setSaving(true);
     try {
-      await updateCategory(id, {
+      const updated = await updateCategory(id, {
         name: editName,
         slaHours: editSlaHours,
-        defaultUnitId: editUnitId || undefined,
       });
       setCategories((prev) =>
-        prev.map((c) =>
-          c.id === id
-            ? { ...c, name: editName, slaHours: editSlaHours, defaultUnitId: editUnitId || null }
-            : c,
-        ),
+        prev.map((c) => (c.id === id ? updated : c)),
       );
       cancelEdit();
     } catch (err) {
@@ -120,6 +124,7 @@ export default function CategoriesPage() {
     try {
       await deleteCategory(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
+      if (routesCatId === id) closeRoutes();
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Failed to delete category.",
@@ -127,10 +132,77 @@ export default function CategoriesPage() {
     }
   }
 
-  function getUnitName(unitId: string | null): string {
-    if (!unitId) return "None";
-    return units.find((u) => u.id === unitId)?.name ?? "Unknown";
+  // ---- Routing panel ----
+
+  function closeRoutes() {
+    setRoutesCatId(null);
+    setRoutes([]);
+    setRouteError("");
   }
+
+  async function openRoutes(catId: string) {
+    if (routesCatId === catId) {
+      closeRoutes();
+      return;
+    }
+    setRoutesCatId(catId);
+    setRoutes([]);
+    setRouteError("");
+    setRoutesLoading(true);
+    try {
+      const data = await getCategoryRoutes(catId);
+      setRoutes(data);
+    } catch (err) {
+      setRouteError(
+        err instanceof ApiError ? err.message : "Failed to load routes.",
+      );
+    } finally {
+      setRoutesLoading(false);
+    }
+  }
+
+  function routeFor(branchId: string): CategoryRoute | undefined {
+    return routes.find((r) => r.branchId === branchId);
+  }
+
+  async function handleRouteChange(
+    categoryId: string,
+    branchId: string,
+    unitId: string,
+  ) {
+    const key = `${categoryId}:${branchId}`;
+    setRouteSavingKey(key);
+    setRouteError("");
+    try {
+      if (!unitId) {
+        // Clearing the route — only call delete if one exists.
+        if (routeFor(branchId)) {
+          await removeCategoryRoute(categoryId, branchId);
+          setRoutes((prev) => prev.filter((r) => r.branchId !== branchId));
+        }
+      } else {
+        const updated = await setCategoryRoute(categoryId, {
+          branchId,
+          unitId,
+        });
+        setRoutes((prev) => [
+          ...prev.filter((r) => r.branchId !== branchId),
+          updated,
+        ]);
+      }
+    } catch (err) {
+      setRouteError(
+        err instanceof ApiError ? err.message : "Failed to update routing.",
+      );
+    } finally {
+      setRouteSavingKey(null);
+    }
+  }
+
+  const unitsForBranch = (branchId: string) =>
+    units.filter((u) => u.branchId === branchId);
+
+  const canManageRouting = canRoute && !branchesLoading;
 
   return (
     <div>
@@ -154,11 +226,14 @@ export default function CategoriesPage() {
 
       {/* Create form (ORG_ADMIN only) */}
       {isAdmin && (
-        <form onSubmit={handleCreate} className="mt-6 rounded-xl border border-line bg-surface p-5">
+        <form
+          onSubmit={handleCreate}
+          className="mt-6 rounded-xl border border-line bg-surface p-5"
+        >
           <h2 className="font-display text-sm font-bold uppercase tracking-wide text-muted">
             New Category
           </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="cat-name" className="mb-1 block font-mono text-xs text-muted">
                 Name
@@ -188,24 +263,6 @@ export default function CategoriesPage() {
                 className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
               />
             </div>
-            <div>
-              <label htmlFor="cat-unit" className="mb-1 block font-mono text-xs text-muted">
-                Default Unit
-              </label>
-              <select
-                id="cat-unit"
-                value={newUnitId}
-                onChange={(e) => setNewUnitId(e.target.value)}
-                className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
-              >
-                <option value="">None</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
           {createError && (
             <p className="mt-2 text-sm text-stamp">{createError}</p>
@@ -224,13 +281,10 @@ export default function CategoriesPage() {
       {!loading && categories.length > 0 && (
         <div className="mt-6 flex flex-col gap-2">
           {categories.map((cat) => (
-            <div
-              key={cat.id}
-              className="rounded-xl border border-line bg-surface p-4"
-            >
+            <div key={cat.id} className="rounded-xl border border-line bg-surface p-4">
               {editingId === cat.id ? (
                 <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <input
                       type="text"
                       value={editName}
@@ -247,18 +301,6 @@ export default function CategoriesPage() {
                       className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
                       placeholder="SLA hours"
                     />
-                    <select
-                      value={editUnitId}
-                      onChange={(e) => setEditUnitId(e.target.value)}
-                      className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40"
-                    >
-                      <option value="">No unit</option>
-                      {units.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -279,27 +321,109 @@ export default function CategoriesPage() {
               ) : (
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {cat.name}
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{cat.name}</p>
                     <p className="mt-0.5 font-mono text-xs text-muted">
-                      SLA: {cat.slaHours}h · Unit: {getUnitName(cat.defaultUnitId)}
+                      SLA: {cat.slaHours}h
                     </p>
                   </div>
-                  {isAdmin && (
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    {canManageRouting && (
                       <button
-                        onClick={() => startEdit(cat)}
-                        className="rounded-lg px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:text-foreground"
+                        onClick={() => openRoutes(cat.id)}
+                        className={`rounded-lg px-3 py-1.5 font-mono text-xs transition-colors ${
+                          routesCatId === cat.id
+                            ? "bg-teal/10 text-teal"
+                            : "text-muted hover:text-foreground"
+                        }`}
                       >
-                        Edit
+                        {routesCatId === cat.id ? "Hide routing" : "Routing"}
                       </button>
-                      <button
+                    )}
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => startEdit(cat)}
+                          className="rounded-lg px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:text-foreground"
+                        >
+                          Edit
+                        </button>                      <button
                         onClick={() => handleDelete(cat.id)}
                         className="rounded-lg px-3 py-1.5 font-mono text-xs text-stamp transition-colors hover:text-stamp/80"
                       >
                         Delete
                       </button>
+                    </>
+                  )}
+                  </div>
+                </div>
+              )}
+
+              {/* Per-branch routing panel */}
+              {routesCatId === cat.id && (
+                <div className="mt-4 rounded-lg border border-line bg-bg p-4">
+                  <h3 className="font-mono text-xs uppercase tracking-wide text-muted">
+                    Routing — where complaints of this category go
+                  </h3>
+
+                  {routesLoading && (
+                    <p className="mt-3 text-sm text-muted">Loading routes…</p>
+                  )}
+
+                  {routeError && (
+                    <p className="mt-3 text-sm text-stamp">{routeError}</p>
+                  )}
+
+                  {!routesLoading && !branchesLoading && (
+                    <div className="mt-3 flex flex-col gap-3">
+                      {branches.map((branch) => {
+                        const route = routeFor(branch.id);
+                        const branchUnits = unitsForBranch(branch.id);
+                        const saving =
+                          routeSavingKey === `${cat.id}:${branch.id}`;
+                        return (
+                          <div
+                            key={branch.id}
+                            className="flex flex-wrap items-center gap-3"
+                          >
+                            {/* Branch name hidden for single-site orgs */}
+                            {isMultiBranch && (
+                              <span className="w-40 shrink-0 truncate text-sm text-foreground">
+                                {branch.name}
+                              </span>
+                            )}
+                            <select
+                              value={route?.unitId ?? ""}
+                              onChange={(e) =>
+                                handleRouteChange(
+                                  cat.id,
+                                  branch.id,
+                                  e.target.value,
+                                )
+                              }
+                              disabled={saving}
+                              className={`min-w-48 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-teal/40 ${
+                                saving ? "opacity-60" : ""
+                              }`}
+                            >
+                              <option value="">— No routing —</option>
+                              {branchUnits.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name}
+                                </option>
+                              ))}
+                            </select>
+                            {branchUnits.length === 0 && (
+                              <span className="font-mono text-[11px] text-muted">
+                                No units in this branch yet
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {branches.length === 0 && (
+                        <p className="text-sm text-muted">No branches found.</p>
+                      )}
                     </div>
                   )}
                 </div>

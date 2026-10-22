@@ -5,17 +5,21 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getSession, logout } from "@/lib/auth-client";
 import type { SessionUser } from "@/lib/auth-client";
+import { useBranches } from "@/hooks/useBranches";
 
 type NavItem = { href: string; label: string; roles?: string[] };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Complaints", roles: ["ORG_ADMIN", "SUPER_ADMIN", "COMPLAINANT"] },
+  { href: "/dashboard", label: "Complaints", roles: ["ORG_ADMIN", "SUPER_ADMIN", "COMPLAINANT", "BRANCH_ADMIN"] },
   { href: "/dashboard", label: "My queue", roles: ["RESOLVER"] },
   { href: "/dashboard/resolved", label: "Resolved", roles: ["RESOLVER"] },
   { href: "/dashboard/complaints/new", label: "File a complaint", roles: ["COMPLAINANT"] },
-  { href: "/dashboard/units", label: "Units", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
+  { href: "/dashboard/units", label: "Units", roles: ["ORG_ADMIN", "SUPER_ADMIN", "BRANCH_ADMIN"] },
   { href: "/dashboard/categories", label: "Categories", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
-  { href: "/dashboard/users", label: "Users", roles: ["ORG_ADMIN", "SUPER_ADMIN"] },
+  { href: "/dashboard/users", label: "Users", roles: ["ORG_ADMIN", "SUPER_ADMIN", "BRANCH_ADMIN"] },
+  // Branches is ORG_ADMIN-only AND only promoted to a top-level item once a
+  // second branch exists (single-site orgs get a low-key link under Settings).
+  { href: "/dashboard/branches", label: "Branches", roles: ["ORG_ADMIN"] },
   { href: "/dashboard/settings", label: "Settings", roles: ["ORG_ADMIN"] },
 ];
 
@@ -44,7 +48,11 @@ export function DashboardSidebar() {
   }
 
   const role = session?.role ?? "COMPLAINANT";
-  const visibleItems = filterNavByRole(NAV_ITEMS, role);
+  const { isMultiBranch } = useBranches();
+  // Hide the top-level Branches item until the org actually has 2+ branches.
+  const visibleItems = filterNavByRole(NAV_ITEMS, role).filter(
+    (item) => item.href !== "/dashboard/branches" || isMultiBranch,
+  );
 
   return (
     <>
