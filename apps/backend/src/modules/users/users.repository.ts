@@ -24,6 +24,15 @@ export class UsersRepository {
   }
 
   /**
+   * Fetch within the caller's scope (built by common/scope.ts) — used for
+   * anything route-reachable, so a BRANCH_ADMIN can never read or verify a
+   * user outside their own branch.
+   */
+  findByIdScoped(id: string, where: Prisma.UserWhereInput) {
+    return this.prisma.user.findFirst({ where: { id, ...where } });
+  }
+
+  /**
    * Tenant-scoped role update: updateMany with id + orgId so a role can
    * never be changed on a user outside the caller's org. Returns the
    * update count (0 means not found in this org).
@@ -35,13 +44,26 @@ export class UsersRepository {
     });
   }
 
-  findAllByOrg(orgId: string, filters?: { role?: UserRole; unitId?: string }) {
+  /**
+   * List with the caller's visibility scope (built by common/scope.ts)
+   * plus optional filters — the only listing entry point.
+   */
+  findAllScoped(
+    where: Prisma.UserWhereInput,
+    filters?: { role?: UserRole; unitId?: string; branchId?: string },
+  ) {
     return this.prisma.user.findMany({
       where: {
-        orgId,
+        ...where,
         ...(filters?.role && { role: filters.role }),
         ...(filters?.unitId && { unitId: filters.unitId }),
+        ...(filters?.branchId && { branchId: filters.branchId }),
       },
     });
+  }
+
+  /** Count users attached to a branch (used for branch-delete checks). */
+  countByBranch(branchId: string) {
+    return this.prisma.user.count({ where: { branchId } });
   }
 }

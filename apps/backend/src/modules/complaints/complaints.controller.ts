@@ -11,7 +11,6 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { AssignComplaintDto } from './dto/assign-complaint.dto';
 import { ComplaintsService } from './complaints.service';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
-import { CurrentOrg } from '../../common/decorators/current-org.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtPayload } from '../auth/types/jwt-payload.type';
@@ -23,41 +22,37 @@ export class ComplaintsController {
 
   @Post()
   create(
-    @CurrentOrg() orgId: string,
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateComplaintDto,
   ) {
-    return this.complaintsService.create(orgId, user.sub, dto);
+    // branchId is derived server-side from the caller's verified token
+    return this.complaintsService.create(user, dto);
   }
 
   /**
-   * ORG_ADMIN only — resolvers cannot self-assign or reassign.
+   * ORG_ADMIN (any complaint in the org) / BRANCH_ADMIN (own branch only)
+   * — resolvers cannot self-assign or reassign.
    * Assign, reassign or unassign (resolverId: null) the resolver.
    */
-  @Roles(UserRole.ORG_ADMIN)
+  @Roles(UserRole.ORG_ADMIN, UserRole.BRANCH_ADMIN)
   @Patch(':id/assign')
   assign(
     @Param('id') id: string,
-    @CurrentOrg() orgId: string,
     @CurrentUser() user: JwtPayload,
     @Body() dto: AssignComplaintDto,
   ) {
-    return this.complaintsService.assign(id, orgId, user.sub, dto);
+    return this.complaintsService.assign(id, user, dto);
   }
 
   @Patch(':id/status')
   async updateStatus(
     @Param('id') id: string,
-    @CurrentOrg() orgId: string,
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateStatusDto,
   ) {
-    const role = user.role as UserRole;
-    const userId = user.sub;
-
-    if (role === 'COMPLAINANT') {
+    if (user.role === 'COMPLAINANT') {
       // COMPLAINANTs can only transition RESOLVED → CLOSED on their own complaint.
-      // (Ownership itself is re-verified inside the service via findByIdScoped.)
+      // (Visibility itself is re-verified inside the service via findByIdScoped.)
       if (dto.status !== 'CLOSED') {
         throw new ForbiddenException(
           'Complainants can only confirm resolution (RESOLVED → CLOSED) on their own complaints',
@@ -65,7 +60,7 @@ export class ComplaintsController {
       }
     }
 
-    return this.complaintsService.updateStatus(id, orgId, userId, role, dto);
+    return this.complaintsService.updateStatus(id, user, dto);
   }
 
   /**
@@ -74,26 +69,20 @@ export class ComplaintsController {
    */
   @Roles(UserRole.RESOLVER)
   @Get('queue-summary')
-  getQueueSummary(
-    @CurrentOrg() orgId: string,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.complaintsService.getQueueSummary(orgId, user.sub);
+  getQueueSummary(@CurrentUser() user: JwtPayload) {
+    return this.complaintsService.getQueueSummary(user);
   }
 
   @Get()
-  findAllByOrg(@CurrentOrg() orgId: string, @CurrentUser() user: JwtPayload) {
-    const role = user.role as UserRole;
-    return this.complaintsService.findAllByOrg(orgId, role, user.sub);
+  findAllByOrg(@CurrentUser() user: JwtPayload) {
+    return this.complaintsService.findAllByOrg(user);
   }
 
   @Get(':id')
   findOne(
     @Param('id') id: string,
-    @CurrentOrg() orgId: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    const role = user.role as UserRole;
-    return this.complaintsService.findByIdScoped(id, orgId, role, user.sub);
+    return this.complaintsService.findByIdScoped(id, user);
   }
 }

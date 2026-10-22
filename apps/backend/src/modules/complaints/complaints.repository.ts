@@ -8,29 +8,13 @@ type CreateComplaintData = {
   complainantId: string;
   categoryId: string;
   assignedUnitId: string | null;
+  branchId: string | null;
   title: string;
   description: string;
   location: string;
   priority?: ComplaintPriority;
   slaDueAt: Date | null;
 };
-
-/**
- * Tenant/role filter for resolver views — always org-scoped, always
- * "assigned to me OR filed by me". Unit membership grants nothing:
- * a resolver only sees complaints specifically assigned to them
- * (plus ones they filed personally). A resolver with no assignments
- * simply gets an empty queue, not an error.
- */
-export function getResolverWhere(
-  orgId: string,
-  userId: string,
-): Prisma.ComplaintWhereInput {
-  return {
-    orgId,
-    OR: [{ assignedResolverId: userId }, { complainantId: userId }],
-  };
-}
 
 /** Consistent include for list/detail reads. */
 const COMPLAINT_INCLUDE = {
@@ -54,6 +38,7 @@ export class ComplaintsRepository {
         organization: { connect: { id: data.orgId } },
         complainant: { connect: { id: data.complainantId } },
         category: { connect: { id: data.categoryId } },
+        branch: data.branchId ? { connect: { id: data.branchId } } : undefined,
         ...(data.assignedUnitId && {
           assignedUnit: { connect: { id: data.assignedUnitId } },
         }),
@@ -61,39 +46,25 @@ export class ComplaintsRepository {
     });
   }
 
-  findAllByOrg(orgId: string) {
+  /**
+   * List with a caller scope built by common/scope.ts — the only listing
+   * entry point. Scope failures yield an empty result, never wider data.
+   */
+  findAllScoped(where: Prisma.ComplaintWhereInput) {
     return this.prisma.complaint.findMany({
-      where: { orgId },
-      orderBy: { createdAt: 'desc' },
-      include: COMPLAINT_INCLUDE,
-    });
-  }
-
-  /** Only complaints filed by this user */
-  findAllByComplainant(orgId: string, complainantId: string) {
-    return this.prisma.complaint.findMany({
-      where: { orgId, complainantId },
+      where,
       orderBy: { createdAt: 'desc' },
       include: COMPLAINT_INCLUDE,
     });
   }
 
   /**
-   * Complaints assigned to this resolver, plus the ones they filed
-   * themselves. NOT their unit's queue — unit membership grants no
-   * visibility (see getResolverWhere).
+   * Fetch by id within the caller's scope — the only single-fetch entry
+   * point for route-reachable flows. Out-of-scope ids return null (404).
    */
-  findAllByResolver(orgId: string, userId: string) {
-    return this.prisma.complaint.findMany({
-      where: getResolverWhere(orgId, userId),
-      orderBy: { createdAt: 'desc' },
-      include: COMPLAINT_INCLUDE,
-    });
-  }
-
-  findById(id: string, orgId: string) {
+  findByIdScoped(id: string, where: Prisma.ComplaintWhereInput) {
     return this.prisma.complaint.findFirst({
-      where: { id, orgId },
+      where: { id, ...where },
       include: {
         ...COMPLAINT_INCLUDE,
         updates: {
@@ -104,22 +75,30 @@ export class ComplaintsRepository {
     });
   }
 
+  /**
+   * Status transition + audit entry. The updateMany is scoped with the
+   * caller's full scope (id + org + branch/role clause): if the complaint
+   * left the scope mid-flight, count is 0 and we report not-found.
+   */
   async updateStatus(
     id: string,
-    orgId: string,
+    where: Prisma.ComplaintWhereInput,
     authorId: string,
     oldStatus: ComplaintStatus,
     newStatus: ComplaintStatus,
     note?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      await tx.complaint.update({
-        where: { id },
+      const result = await tx.complaint.updateMany({
+        where: { id, ...where },
         data: {
           status: newStatus,
           ...(newStatus === 'RESOLVED' && { resolvedAt: new Date() }),
         },
       });
+      if (result.count === 0) {
+        return null;
+      }
 
       await tx.complaintUpdate.create({
         data: {
@@ -132,7 +111,7 @@ export class ComplaintsRepository {
       });
 
       return tx.complaint.findFirst({
-        where: { id, orgId },
+        where: { id, ...where },
         include: {
           ...COMPLAINT_INCLUDE,
           updates: {
@@ -146,14 +125,14 @@ export class ComplaintsRepository {
 
   /**
    * Assign / reassign / unassign a resolver, with an audit-log entry.
-   * The updateMany is scoped with id + orgId (tenant isolation): if the
-   * complaint vanished or left the org mid-flight, count is 0 and we 404.
+   * The updateMany is scoped with the caller's full scope (tenant +
+   * branch isolation): count 0 means not-found in scope.
    * The status itself does not change — oldStatus === newStatus keeps the
    * existing ComplaintUpdate pattern intact, the note carries the details.
    */
   async assign(
     id: string,
-    orgId: string,
+    where: Prisma.ComplaintWhereInput,
     authorId: string,
     resolverId: string | null,
     oldStatus: ComplaintStatus,
@@ -161,7 +140,7 @@ export class ComplaintsRepository {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const result = await tx.complaint.updateMany({
-        where: { id, orgId },
+        where: { id, ...where },
         data: { assignedResolverId: resolverId },
       });
       if (result.count === 0) {
@@ -179,7 +158,7 @@ export class ComplaintsRepository {
       });
 
       return tx.complaint.findFirst({
-        where: { id, orgId },
+        where: { id, ...where },
         include: {
           ...COMPLAINT_INCLUDE,
           updates: {
@@ -192,12 +171,12 @@ export class ComplaintsRepository {
   }
 
   /**
-   * Counts for the resolver's queue stats strip, scoped to complaints
-   * assigned to them (plus their own). overdue also counts ESCALATED —
-   * an escalated complaint is by definition one whose SLA was missed.
+   * Counts for the resolver's queue stats strip, scoped by the caller's
+   * scope where clause (built in common/scope.ts). overdue also counts
+   * ESCALATED — an escalated complaint is by definition one whose SLA was
+   * missed.
    */
-  getQueueSummary(orgId: string, userId: string) {
-    const where = getResolverWhere(orgId, userId);
+  getQueueSummary(where: Prisma.ComplaintWhereInput) {
     const now = new Date();
 
     return Promise.all([
@@ -206,8 +185,8 @@ export class ComplaintsRepository {
       }),
       this.prisma.complaint.count({
         where: {
-          // AND (not a top-level OR) so the assigned/own isolation clause in
-          // `where` isn't overwritten by the overdue conditions.
+          // AND (not a top-level OR) so the scope clause in `where`
+          // isn't overwritten by the overdue conditions.
           AND: [
             where,
             { status: { notIn: ['RESOLVED', 'CLOSED'] } },
@@ -251,14 +230,44 @@ export class ComplaintsRepository {
   }
 
   /**
-   * Escalate a complaint and log the update. No authorId — the system
-   * user (null) is used as the author for automated transitions.
+   * Tier-1 candidates already escalated but never taken to the next tier:
+   * status ESCALATED, level 1, not resolved since.
+   * Used by the escalation cron job.
    */
-  async escalateComplaint(id: string, oldStatus: ComplaintStatus) {
+  findTierOneEscalated() {
+    return this.prisma.complaint.findMany({
+      where: {
+        status: 'ESCALATED',
+        escalationLevel: 1,
+        resolvedAt: null,
+      },
+    });
+  }
+
+  /** When the complaint was escalated to tier 1 (from its audit log). */
+  getEscalatedAt(complaintId: string) {
+    return this.prisma.complaintUpdate.findFirst({
+      where: { complaintId, newStatus: 'ESCALATED' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+  }
+
+  /**
+   * Escalate a complaint to the given level and log the update.
+   * No authorId — the system user (null) is used as the author for
+   * automated transitions.
+   */
+  async escalateComplaint(
+    id: string,
+    oldStatus: ComplaintStatus,
+    level: 1 | 2,
+    note: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       await tx.complaint.update({
         where: { id },
-        data: { status: 'ESCALATED' },
+        data: { status: 'ESCALATED', escalationLevel: level },
       });
 
       await tx.complaintUpdate.create({
@@ -267,7 +276,7 @@ export class ComplaintsRepository {
           authorId: '00000000-0000-0000-0000-000000000000', // system user
           oldStatus,
           newStatus: 'ESCALATED',
-          note: 'Automatically escalated — SLA deadline passed.',
+          note,
         },
       });
 

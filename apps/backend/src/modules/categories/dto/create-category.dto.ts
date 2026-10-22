@@ -1,7 +1,6 @@
 import {
   IsInt,
   IsNotEmpty,
-  IsOptional,
   IsPositive,
   IsString,
   MaxLength,
@@ -16,8 +15,4 @@ export class CreateCategoryDto {
   @IsInt()
   @IsPositive()
   slaHours!: number;
-
-  @IsString()
-  @IsOptional()
-  defaultUnitId?: string;
 }

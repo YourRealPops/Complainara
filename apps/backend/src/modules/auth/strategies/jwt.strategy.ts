@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { JwtPayload } from '../types/jwt-payload.type';
+import { JwtPayload, RawJwtPayload } from '../types/jwt-payload.type';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -13,8 +13,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: JwtPayload) {
-    // Whatever we return here becomes `request.user` in every guarded route
-    return payload;
+  validate(payload: RawJwtPayload): JwtPayload {
+    // Whatever we return here becomes `request.user` in every guarded route.
+    // Tokens issued before multi-branch support have no branchId claim:
+    // normalize a missing value to null so downstream code never sees
+    // `undefined` (null is correct for the ORG_ADMINs holding old tokens).
+    return { ...payload, branchId: payload.branchId ?? null };
   }
 }

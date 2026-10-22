@@ -17,6 +17,11 @@ import {
   getResolverTransitions,
   isValidTransition,
 } from './complaint-status.rules';
+import {
+  complaintScopeWhere,
+  isWithinScope,
+} from '../../common/scope';
+import type { JwtPayload } from '../auth/types/jwt-payload.type';
 import type { NotificationService } from '../notifications/notifications.interface';
 import type { UserRole } from '@prisma/client';
 
@@ -32,20 +37,38 @@ export class ComplaintsService {
     private readonly notificationService: NotificationService,
   ) {}
 
-  async create(orgId: string, complainantId: string, dto: CreateComplaintDto) {
+  async create(actor: JwtPayload, dto: CreateComplaintDto) {
+    // Complaints must always belong to a branch — derived server-side from
+    // the complainant's verified token, never from client input.
+    if (!actor.branchId) {
+      throw new ForbiddenException(
+        'Your account is not attached to a branch — complaints can only be filed from a branch',
+      );
+    }
+
     // Throws NotFoundException if the category doesn't exist or belongs to another org
     const category = await this.categoriesService.findById(
       dto.categoryId,
-      orgId,
+      actor.orgId,
     );
 
     const slaDueAt = this.calculateSlaDueAt(category.slaHours);
 
+    // Per-branch routing: unit configured for this category + the
+    // complainant's branch. No route -> created with no unit, shown to the
+    // branch admin as "Needs routing". A branch never routes to another
+    // branch's unit.
+    const route = await this.categoriesService.findRouteForComplaint(
+      dto.categoryId,
+      actor.branchId,
+    );
+
     return this.complaintsRepository.create({
-      orgId,
-      complainantId,
+      orgId: actor.orgId,
+      complainantId: actor.sub,
       categoryId: dto.categoryId,
-      assignedUnitId: category.defaultUnitId,
+      assignedUnitId: route?.unitId ?? null,
+      branchId: actor.branchId,
       title: dto.title,
       description: dto.description,
       location: dto.location,
@@ -55,68 +78,32 @@ export class ComplaintsService {
   }
 
   /**
-   * Role-scoped list of complaints:
-   * - COMPLAINANT: only their own complaints
-   * - RESOLVER: complaints assigned to THEM + ones they filed
-   *   (never the whole unit queue — unit membership grants nothing)
-   * - ORG_ADMIN / SUPER_ADMIN: all complaints in the org
+   * Role/branch-scoped list of complaints — the scope is built in ONE
+   * place (common/scope.ts) from the verified JWT:
+   * - COMPLAINANT: only their own complaints, in their branch
+   * - RESOLVER: complaints assigned to THEM + ones they filed, in their
+   *   branch (never the whole unit queue — unit membership grants nothing)
+   * - BRANCH_ADMIN: every complaint in their branch
+   * - ORG_ADMIN / SUPER_ADMIN: every complaint in the org
+   * Fail-closed: any invalid scope returns [] rather than wider data.
    */
-  async findAllByOrg(orgId: string, role: UserRole, userId: string) {
-    if (role === 'COMPLAINANT') {
-      return this.complaintsRepository.findAllByComplainant(orgId, userId);
-    }
-    if (role === 'RESOLVER') {
-      return this.complaintsRepository.findAllByResolver(orgId, userId);
-    }
-    // ORG_ADMIN, SUPER_ADMIN see everything
-    return this.complaintsRepository.findAllByOrg(orgId);
+  async findAllByOrg(actor: JwtPayload) {
+    return this.complaintsRepository.findAllScoped(complaintScopeWhere(actor));
   }
 
   /**
-   * Internal fetch by id + orgId without role scoping.
-   * NOTE: anything reachable from a route must go through findByIdScoped —
-   * this exists for trusted internal flows only.
+   * Public-facing fetch with role/branch scoping. Anything outside the
+   * caller's scope is a 404 — including a BRANCH_ADMIN guessing an id in
+   * another branch.
    */
-  async findById(id: string, orgId: string) {
-    const complaint = await this.complaintsRepository.findById(id, orgId);
+  async findByIdScoped(id: string, actor: JwtPayload) {
+    const complaint = await this.complaintsRepository.findByIdScoped(
+      id,
+      complaintScopeWhere(actor),
+    );
     if (!complaint) {
       throw new NotFoundException(`Complaint with id ${id} not found`);
     }
-    return complaint;
-  }
-
-  /**
-   * Public-facing fetch with role scoping.
-   * - COMPLAINANT: only their own complaint, else 404
-   * - RESOLVER: assigned to them OR filed by them, else 404.
-   *   A complaint assigned to a DIFFERENT resolver in their same unit
-   *   is invisible to them (404).
-   * - ORG_ADMIN / SUPER_ADMIN: any complaint in the org
-   */
-  async findByIdScoped(
-    id: string,
-    orgId: string,
-    role: UserRole,
-    userId: string,
-  ) {
-    const complaint = await this.complaintsRepository.findById(id, orgId);
-    if (!complaint) {
-      throw new NotFoundException(`Complaint with id ${id} not found`);
-    }
-
-    if (role === 'COMPLAINANT') {
-      if (complaint.complainantId !== userId) {
-        throw new NotFoundException(`Complaint with id ${id} not found`);
-      }
-    } else if (role === 'RESOLVER') {
-      const isOwn = complaint.complainantId === userId;
-      const isAssigned = complaint.assignedResolverId === userId;
-      if (!isOwn && !isAssigned) {
-        throw new NotFoundException(`Complaint with id ${id} not found`);
-      }
-    }
-    // ORG_ADMIN / SUPER_ADMIN: no additional check
-
     return complaint;
   }
 
@@ -125,44 +112,60 @@ export class ComplaintsService {
    * to them (plus their own). overdue includes ESCALATED — an escalated
    * complaint is one whose SLA was already missed.
    */
-  async getQueueSummary(orgId: string, userId: string) {
-    return this.complaintsRepository.getQueueSummary(orgId, userId);
+  async getQueueSummary(actor: JwtPayload) {
+    return this.complaintsRepository.getQueueSummary(
+      complaintScopeWhere(actor),
+    );
   }
 
   /**
-   * ORG_ADMIN assigns / reassigns / unassigns a resolver.
-   * - resolverId must be a RESOLVER in the same org (wrong org → 404, so
-   *   cross-org ids can't be probed)
+   * Assign / reassign / unassign a resolver.
+   * - resolverId must be a RESOLVER visible to the caller (same org for
+   *   ORG_ADMIN; same branch for BRANCH_ADMIN) — anything else 404s, so
+   *   cross-org / cross-branch ids can't be probed
    * - unit match is NOT hard-enforced (admin decision): a cross-unit
    *   assignment is allowed and called out in the audit note
    * - resolverId: null unassigns
    */
-  async assign(
-    id: string,
-    orgId: string,
-    authorId: string,
-    dto: AssignComplaintDto,
-  ) {
+  async assign(id: string, actor: JwtPayload, dto: AssignComplaintDto) {
     if (dto.resolverId === undefined) {
       throw new BadRequestException(
         'resolverId is required — send null to unassign',
       );
     }
 
-    const complaint = await this.complaintsRepository.findById(id, orgId);
+    const scopeWhere = complaintScopeWhere(actor);
+    const complaint = await this.complaintsRepository.findByIdScoped(
+      id,
+      scopeWhere,
+    );
     if (!complaint) {
       throw new NotFoundException(`Complaint with id ${id} not found`);
     }
 
-    let resolver: { id: string; name: string; unitId: string | null } | null =
-      null;
+    let resolver: {
+      id: string;
+      name: string;
+      unitId: string | null;
+      branchId: string | null;
+    } | null = null;
     if (dto.resolverId !== null) {
       const user = await this.usersService.findById(dto.resolverId);
-      if (user.orgId !== orgId || user.role !== 'RESOLVER') {
-        // Same 404 whether the id exists elsewhere or not — no cross-org probing
+      // The assignee must satisfy the caller's own scope: same org for
+      // ORG_ADMIN, same branch for BRANCH_ADMIN. Same 404 whether the id
+      // exists elsewhere or not — no cross-org/cross-branch probing.
+      if (
+        user.role !== 'RESOLVER' ||
+        !isWithinScope(actor, { orgId: user.orgId, branchId: user.branchId })
+      ) {
         throw new NotFoundException(`Resolver not found in this organization`);
       }
-      resolver = { id: user.id, name: user.name, unitId: user.unitId };
+      resolver = {
+        id: user.id,
+        name: user.name,
+        unitId: user.unitId,
+        branchId: user.branchId,
+      };
     }
 
     const previous = complaint.assignedResolver;
@@ -187,8 +190,8 @@ export class ComplaintsService {
 
     const updated = await this.complaintsRepository.assign(
       id,
-      orgId,
-      authorId,
+      scopeWhere,
+      actor.sub,
       resolver?.id ?? null,
       complaint.status,
       note,
@@ -201,19 +204,17 @@ export class ComplaintsService {
 
   async updateStatus(
     id: string,
-    orgId: string,
-    authorId: string,
-    role: UserRole,
+    actor: JwtPayload,
     dto: UpdateStatusDto,
   ) {
-    // Role-scoped fetch: a RESOLVER only reaches complaints assigned to them
-    // (or ones they filed); COMPLAINANTs only their own; admins org-wide.
-    // findByIdScoped 404s anything outside the caller's scope.
-    const complaint = await this.findByIdScoped(id, orgId, role, authorId);
+    const role = actor.role as UserRole;
+    // Role/branch-scoped fetch: anything outside the caller's scope 404s,
+    // including a BRANCH_ADMIN reaching for another branch's complaint.
+    const complaint = await this.findByIdScoped(id, actor);
 
     // Acting (status changes) requires being the assigned resolver —
     // seeing a complaint you filed does not make it yours to work.
-    if (role === 'RESOLVER' && complaint.assignedResolverId !== authorId) {
+    if (role === 'RESOLVER' && complaint.assignedResolverId !== actor.sub) {
       throw new ForbiddenException(
         'Only the assigned resolver can update this complaint',
       );
@@ -237,12 +238,15 @@ export class ComplaintsService {
 
     const updated = await this.complaintsRepository.updateStatus(
       id,
-      orgId,
-      authorId,
+      complaintScopeWhere(actor),
+      actor.sub,
       complaint.status,
       dto.status,
       dto.note,
     );
+    if (!updated) {
+      throw new NotFoundException(`Complaint with id ${id} not found`);
+    }
 
     // TODO: fetch complainant email from users table when notification service is real
     // For now the stub just logs
@@ -261,11 +265,22 @@ export class ComplaintsService {
     return due;
   }
 
+  /** Hours a complaint may sit at tier 1 before going to tier 2 (HQ). */
+  private tierTwoHours(): number {
+    const raw = process.env.ESCALATION_TIER2_HOURS;
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
+  }
+
   /**
-   * Runs every 15 minutes. Finds complaints past their SLA deadline
-   * that are not RESOLVED/CLOSED/ESCALATED, and escalates them.
-   * Reuses the existing isValidTransition rule to confirm ESCALATED
-   * is a valid next state from the current status.
+   * Runs every 15 minutes. Two tiers:
+   * - Tier 1: complaints past their SLA deadline that are not
+   *   RESOLVED/CLOSED/ESCALATED -> status ESCALATED, escalationLevel 1,
+   *   visible to the branch admin as needing attention.
+   * - Tier 2: complaints still unresolved ESCALATION_TIER2_HOURS (default
+   *   24) after their tier-1 escalation -> escalationLevel 2, flagged to HQ.
+   * Both reuse the existing isValidTransition rule and write a
+   * ComplaintUpdate audit entry per escalation.
    */
   @Cron('*/15 * * * *')
   async handleEscalation() {
@@ -285,6 +300,8 @@ export class ComplaintsService {
       await this.complaintsRepository.escalateComplaint(
         complaint.id,
         complaint.status,
+        1,
+        'Automatically escalated — SLA deadline passed.',
       );
 
       // TODO: fetch complainant email from users table when notification service is real
@@ -297,8 +314,38 @@ export class ComplaintsService {
       escalated++;
     }
 
+    // Tier 2: escalated at tier 1, still unresolved after N hours -> HQ.
+    const thresholdMs = this.tierTwoHours() * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - thresholdMs);
+    const tierOne = await this.complaintsRepository.findTierOneEscalated();
+    let tierTwo = 0;
+
+    for (const complaint of tierOne) {
+      // When was tier 1? The escalation audit entry — resolvedAt stays
+      // null while unresolved, so a complaint resolved-and-reopened later
+      // is not silently re-escalated.
+      const escalatedAt = await this.complaintsRepository.getEscalatedAt(
+        complaint.id,
+      );
+      if (!escalatedAt || escalatedAt.createdAt > cutoff) {
+        continue;
+      }
+
+      await this.complaintsRepository.escalateComplaint(
+        complaint.id,
+        complaint.status,
+        2,
+        `Escalated to HQ — still unresolved ${this.tierTwoHours()}h after the initial escalation.`,
+      );
+
+      this.logger.warn(
+        `Complaint ${complaint.id} escalated to HQ (tier 2)`,
+      );
+      tierTwo++;
+    }
+
     this.logger.log(
-      `Escalation check complete. Escalated ${escalated} complaint(s).`,
+      `Escalation check complete. Escalated ${escalated} complaint(s) to tier 1, ${tierTwo} to tier 2.`,
     );
   }
 }

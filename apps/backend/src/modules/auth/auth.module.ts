@@ -6,11 +6,13 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { BranchesModule } from '../branches/branches.module';
 
 @Module({
   imports: [
     UsersModule,
     OrganizationsModule,
+    BranchesModule,
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,

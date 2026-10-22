@@ -9,6 +9,7 @@ datasource db {
 enum UserRole {
   COMPLAINANT
   RESOLVER
+  BRANCH_ADMIN
   ORG_ADMIN
   SUPER_ADMIN
 }
@@ -33,6 +34,8 @@ model Organization {
   id        String   @id @default(uuid())
   name      String
   type      String
+  /// @deprecated Moved to Branch.joinCode. Kept until the removal migration
+  /// runs after the multi-branch release is deployed and verified.
   joinCode  String   @unique @map("join_code")
   allowedEmailDomain String? @map("allowed_email_domain")
   createdAt DateTime @default(now()) @map("created_at")
@@ -41,8 +44,29 @@ model Organization {
   units      Unit[]
   categories Category[]
   complaints Complaint[]
+  branches   Branch[]
 
   @@map("organizations")
+}
+
+/// A branch of an organization. Flat hierarchy: HQ (the org itself) ->
+/// branches. Every org has a default "Main" branch, created at signup.
+model Branch {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  name      String
+  location  String?
+  joinCode  String   @unique @map("join_code")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  users        User[]
+  units        Unit[]
+  complaints   Complaint[]
+  routes       CategoryRoute[]
+
+  @@index([orgId])
+  @@map("branches")
 }
 
 model User {
@@ -53,16 +77,20 @@ model User {
   password String
   role   UserRole @default(COMPLAINANT)
   unitId String?  @map("unit_id")
+  /// null = HQ (ORG_ADMIN / SUPER_ADMIN), otherwise the user's branch.
+  branchId String? @map("branch_id")
   createdAt DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [orgId], references: [id])
   unit         Unit?        @relation(fields: [unitId], references: [id])
+  branch       Branch?      @relation(fields: [branchId], references: [id])
 
   complaintsSubmitted Complaint[]       @relation("Complainant")
   complaintsAssigned  Complaint[]       @relation("AssignedResolver")
   complaintUpdates    ComplaintUpdate[]
 
   @@index([orgId])
+  @@index([branchId])
   @@map("users")
 }
 
@@ -70,13 +98,18 @@ model Unit {
   id    String @id @default(uuid())
   orgId String @map("org_id")
   name  String
+  /// null = HQ unit, otherwise the unit's branch.
+  branchId String? @map("branch_id")
 
   organization Organization @relation(fields: [orgId], references: [id])
+  branch       Branch?      @relation(fields: [branchId], references: [id])
   users        User[]
   categories   Category[]
   complaints   Complaint[]
+  routes       CategoryRoute[]
 
   @@index([orgId])
+  @@index([branchId])
   @@map("units")
 }
 
@@ -84,15 +117,36 @@ model Category {
   id             String @id @default(uuid())
   orgId          String @map("org_id")
   name           String
+  /// @deprecated Routing moved to CategoryRoute (per-branch). Kept until the
+  /// removal migration runs after the multi-branch release is verified.
   defaultUnitId  String? @map("default_unit_id")
   slaHours       Int    @map("sla_hours")
 
   organization Organization @relation(fields: [orgId], references: [id])
   defaultUnit  Unit?        @relation(fields: [defaultUnitId], references: [id])
   complaints   Complaint[]
+  routes       CategoryRoute[]
 
   @@index([orgId])
   @@map("categories")
+}
+
+/// Per-branch routing for a category: complaints in `branchId` filed under
+/// `categoryId` route to `unitId`. No row = "needs routing" by the branch admin.
+model CategoryRoute {
+  id         String @id @default(uuid())
+  categoryId String @map("category_id")
+  branchId   String @map("branch_id")
+  unitId     String @map("unit_id")
+
+  category Category @relation(fields: [categoryId], references: [id])
+  branch   Branch   @relation(fields: [branchId], references: [id])
+  unit     Unit     @relation(fields: [unitId], references: [id])
+
+  @@unique([categoryId, branchId])
+  @@index([branchId])
+  @@index([unitId])
+  @@map("category_routes")
 }
 
 model Complaint {
@@ -102,11 +156,15 @@ model Complaint {
   categoryId      String            @map("category_id")
   assignedUnitId  String?           @map("assigned_unit_id")
   assignedResolverId String?        @map("assigned_resolver_id")
+  /// Derived server-side from the complainant, never from client input.
+  branchId        String?           @map("branch_id")
   title           String
   description     String
   location        String
   status          ComplaintStatus   @default(SUBMITTED)
   priority        ComplaintPriority @default(MEDIUM)
+  /// 0 = normal, 1 = SLA breached, 2 = still unresolved 24h after tier 1 (HQ).
+  escalationLevel Int               @default(0) @map("escalation_level")
   slaDueAt        DateTime?         @map("sla_due_at")
   createdAt       DateTime          @default(now()) @map("created_at")
   resolvedAt      DateTime?         @map("resolved_at")
@@ -116,6 +174,7 @@ model Complaint {
   category     Category     @relation(fields: [categoryId], references: [id])
   assignedUnit Unit?        @relation(fields: [assignedUnitId], references: [id])
   assignedResolver User?    @relation("AssignedResolver", fields: [assignedResolverId], references: [id])
+  branch       Branch?      @relation(fields: [branchId], references: [id])
 
   updates     ComplaintUpdate[]
   attachments Attachment[]
@@ -123,6 +182,7 @@ model Complaint {
   @@index([orgId])
   @@index([status])
   @@index([assignedResolverId])
+  @@index([branchId])
   @@map("complaints")
 }
 

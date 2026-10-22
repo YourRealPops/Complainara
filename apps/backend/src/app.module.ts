@@ -13,6 +13,8 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { ComplaintsModule } from './modules/complaints/complaints.module';
+import { BranchesModule } from './modules/branches/branches.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { ComplaintsModule } from './modules/complaints/complaints.module';
     AuthModule,
     UnitsModule,
     CategoriesModule,
+    BranchesModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [

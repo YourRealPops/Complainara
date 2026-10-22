@@ -1,12 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrganizationsRepository } from './organizations.repository';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
-import { generateJoinCode } from '../../common/utils/join-code';
+import { BranchesService } from '../branches/branches.service';
 
+/**
+ * Join codes live on Branch now (one per branch). The organization-level
+ * endpoints below proxy to the org's default "Main" branch so existing
+ * HQ settings screens and shared links keep working unchanged.
+ */
 @Injectable()
 export class OrganizationsService {
   constructor(
     private readonly organizationsRepository: OrganizationsRepository,
+    private readonly branchesService: BranchesService,
   ) {}
 
   create(dto: CreateOrganizationDto) {
@@ -30,13 +36,12 @@ export class OrganizationsService {
   }
 
   async regenerateJoinCode(orgId: string) {
-    const newCode = generateJoinCode();
-    return this.organizationsRepository.updateJoinCode(orgId, newCode);
+    return this.branchesService.regenerateMainJoinCode(orgId);
   }
 
   async getJoinCode(orgId: string) {
-    const org = await this.findById(orgId);
-    return { joinCode: org.joinCode };
+    const main = await this.branchesService.getMainJoinCode(orgId);
+    return { joinCode: main.joinCode };
   }
 
   async updateAllowedEmailDomain(orgId: string, domain: string | null) {

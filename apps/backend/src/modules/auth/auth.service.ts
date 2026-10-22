@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { BranchesService } from '../branches/branches.service';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { JoinDto } from './dto/join.dto';
@@ -19,6 +20,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly organizationsService: OrganizationsService,
+    private readonly branchesService: BranchesService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -33,7 +35,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.issueToken(user.id, user.orgId, user.role);
+    // branchId comes from the user record: null = HQ (ORG_ADMIN / SUPER_ADMIN)
+    return this.issueToken(
+      user.id,
+      user.orgId,
+      user.role,
+      user.branchId ?? null,
+    );
   }
 
   async signup(dto: SignupDto) {
@@ -52,18 +60,21 @@ export class AuthService {
       role: UserRole.ORG_ADMIN,
     });
 
-    return this.issueToken(user.id, organization.id, UserRole.ORG_ADMIN);
+    // ORG_ADMINs are HQ users — they have no branch.
+    return this.issueToken(user.id, organization.id, UserRole.ORG_ADMIN, null);
   }
 
   async join(dto: JoinDto) {
-    const organization = await this.organizationsService.findByJoinCode(
-      dto.joinCode,
-    );
-    if (!organization) {
+    // The join code now identifies a BRANCH (org + branch in one lookup).
+    // Old shared links keep working: every org's Main branch carries the
+    // org's original join code.
+    const branch = await this.branchesService.findByJoinCode(dto.joinCode);
+    if (!branch) {
       throw new NotFoundException('Invalid join code');
     }
+    const organization = branch.organization;
 
-    // Check email domain restriction
+    // Check email domain restriction (org-level policy)
     if (organization.allowedEmailDomain) {
       const emailDomain = dto.email.split('@')[1]?.toLowerCase();
       if (emailDomain !== organization.allowedEmailDomain.toLowerCase()) {
@@ -73,20 +84,32 @@ export class AuthService {
       }
     }
 
-    // Reuse UsersService.create — handles bcrypt hashing and duplicate-email conflict
+    // Reuse UsersService.create — handles bcrypt hashing and duplicate-email
+    // conflict. The user is tagged with the branch the code belongs to.
     const user = await this.usersService.create({
       name: dto.name,
       email: dto.email,
       password: dto.password,
       orgId: organization.id,
       role: UserRole.COMPLAINANT,
+      branchId: branch.id,
     });
 
-    return this.issueToken(user.id, organization.id, UserRole.COMPLAINANT);
+    return this.issueToken(
+      user.id,
+      organization.id,
+      UserRole.COMPLAINANT,
+      branch.id,
+    );
   }
 
-  private issueToken(userId: string, orgId: string, role: UserRole) {
-    const payload: JwtPayload = { sub: userId, orgId, role };
+  private issueToken(
+    userId: string,
+    orgId: string,
+    role: UserRole,
+    branchId: string | null,
+  ) {
+    const payload: JwtPayload = { sub: userId, orgId, role, branchId };
     return { accessToken: this.jwtService.sign(payload) };
   }
 }

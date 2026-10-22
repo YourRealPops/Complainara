@@ -7,12 +7,28 @@ import { generateJoinCode } from '../../common/utils/join-code';
 export class OrganizationsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * New orgs auto-create their default "Main" branch in the same
+   * transaction. The org record (kept for the rollback window) shares the
+   * Main branch's join code, so both join paths always agree.
+   */
   create(data: CreateOrganizationDto) {
-    return this.prisma.organization.create({
-      data: {
-        ...data,
-        joinCode: generateJoinCode(),
-      },
+    const joinCode = generateJoinCode();
+    return this.prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({
+        data: {
+          ...data,
+          joinCode,
+        },
+      });
+      await tx.branch.create({
+        data: {
+          organization: { connect: { id: org.id } },
+          name: 'Main',
+          joinCode,
+        },
+      });
+      return org;
     });
   }
 

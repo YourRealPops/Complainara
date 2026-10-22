@@ -13,4 +13,8 @@ export class FindUsersDto {
   @IsUUID()
   @IsOptional()
   unitId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  branchId?: string;
 }

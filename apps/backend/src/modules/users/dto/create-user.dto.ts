@@ -31,4 +31,13 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   unitId?: string;
+
+  /**
+   * Target branch. Required for BRANCH_ADMIN / RESOLVER / COMPLAINANT;
+   * ignored (null) for HQ roles (ORG_ADMIN / SUPER_ADMIN).
+   * BRANCH_ADMIN callers cannot set this to a branch other than their own.
+   */
+  @IsString()
+  @IsOptional()
+  branchId?: string;
 }
